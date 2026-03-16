@@ -3,6 +3,7 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   useMessagePartText,
+  useThreadRuntime,
 } from "@assistant-ui/react";
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { parseToolCalls, type KonciergeToolCall } from "./tool-calls";
@@ -30,6 +31,20 @@ function writeCollapsed(value: boolean): void {
   }
 }
 
+// ─── Scoped CSS for pseudo-elements (inline styles can't target ::placeholder) ─
+
+const KONCIERGE_INPUT_CLASS = "koncierge-composer-input";
+
+const scopedCSS = `
+.${KONCIERGE_INPUT_CLASS} {
+  color: #1e293b !important;
+  background-color: #ffffff !important;
+}
+.${KONCIERGE_INPUT_CLASS}::placeholder {
+  color: #94a3b8 !important;
+}
+`;
+
 // ─── Inline styles (self-contained, no external CSS required) ────────────────
 
 const panelContainerStyle: CSSProperties = {
@@ -41,6 +56,8 @@ const panelContainerStyle: CSSProperties = {
   flexDirection: "column",
   alignItems: "flex-end",
   fontFamily: "system-ui, -apple-system, sans-serif",
+  maxWidth: "calc(100vw - 32px)",
+  boxSizing: "border-box",
 };
 
 const panelStyle: CSSProperties = {
@@ -121,6 +138,26 @@ const emptyHeadingStyle: CSSProperties = {
   fontWeight: 600,
   color: "#1e293b",
   marginBottom: 8,
+};
+
+const suggestedQuestionsStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  marginTop: 12,
+};
+
+const suggestedQuestionBtnStyle: CSSProperties = {
+  background: "none",
+  border: "1px solid #e2e8f0",
+  borderRadius: 8,
+  padding: "6px 12px",
+  fontSize: 12,
+  color: "#3b82f6",
+  cursor: "pointer",
+  textAlign: "left",
+  lineHeight: 1.4,
+  fontFamily: "inherit",
 };
 
 const userMessageStyle: CSSProperties = {
@@ -265,6 +302,33 @@ function AssistantMessage() {
   );
 }
 
+const SUGGESTED_QUESTIONS = [
+  "What can Kapable do?",
+  "Show me around the platform",
+  "How do I create my first workflow?",
+];
+
+function SuggestedQuestions() {
+  const threadRuntime = useThreadRuntime();
+  const handleClick = (text: string) => {
+    threadRuntime.append({ role: "user", content: [{ type: "text", text }] });
+  };
+  return (
+    <div style={suggestedQuestionsStyle}>
+      {SUGGESTED_QUESTIONS.map((q) => (
+        <button
+          key={q}
+          type="button"
+          style={suggestedQuestionBtnStyle}
+          onClick={() => handleClick(q)}
+        >
+          {q}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main panel ──────────────────────────────────────────────────────────────
 
 export interface KonciergePanelProps {
@@ -325,6 +389,7 @@ export function KonciergePanel({
 
   return (
     <KonciergeToolsContext.Provider value={onToolCalls ?? null}>
+      <style dangerouslySetInnerHTML={{ __html: scopedCSS }} />
       <div style={panelContainerStyle} className={className}>
         {!collapsed && (
           <div style={panelStyle}>
@@ -350,11 +415,13 @@ export function KonciergePanel({
                       <>
                         <div style={emptyIconStyle} aria-hidden="true">K</div>
                         <div style={emptyHeadingStyle}>
-                          Hi, I'm Koncierge — ask me anything about the Kapable platform
+                          Hi, I'm Koncierge
                         </div>
                         <div>
-                          Say <strong>"show me around"</strong> to get started.
+                          I can help you explore the Kapable platform.
+                          Try one of these to get started:
                         </div>
+                        <SuggestedQuestions />
                       </>
                     )}
                   </div>
@@ -372,6 +439,7 @@ export function KonciergePanel({
               <ComposerPrimitive.Root style={composerStyle}>
                 <ComposerPrimitive.Input
                   placeholder="Type a message..."
+                  className={KONCIERGE_INPUT_CLASS}
                   style={inputStyle as unknown as Record<string, unknown>}
                   autoFocus
                 />
