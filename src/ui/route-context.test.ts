@@ -28,6 +28,73 @@ describe("getPageTitleFromDocument", () => {
   });
 });
 
+describe("provider default wiring — adapter uses browser getters when none supplied", () => {
+  it("sends SSR-safe defaults (empty strings) when using getRouteFromLocation/getPageTitleFromDocument", async () => {
+    const { createKonciergeAdapter } = await import("./koncierge-adapter");
+
+    let capturedBody: Record<string, unknown> | null = null;
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"delta":"ok"}\n\n'));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    };
+
+    try {
+      // Simulate what KonciergeRuntimeProvider does:
+      // config.getRoute ?? getRouteFromLocation
+      // config.getPageTitle ?? getPageTitleFromDocument
+      const adapter = createKonciergeAdapter({
+        endpoint: "http://localhost:9999/test",
+        getRoute: getRouteFromLocation,
+        getPageTitle: getPageTitleFromDocument,
+      });
+
+      const gen = adapter.run({
+        messages: [
+          {
+            role: "user" as const,
+            content: [{ type: "text" as const, text: "hello" }],
+            id: "msg-default",
+            createdAt: new Date(),
+            metadata: {} as never,
+            status: { type: "complete" as const },
+          },
+        ],
+        abortSignal: new AbortController().signal,
+        config: {} as never,
+        context: { useRender: (() => {}) as never, ReadonlyStore: (() => {}) as never } as never,
+        unstable_assistantMessageId: "",
+        onUpdate: () => {},
+      });
+
+      let result = await gen.next();
+      while (!result.done) {
+        result = await gen.next();
+      }
+
+      expect(capturedBody).not.toBeNull();
+      // In SSR/Bun environment, browser getters return ""
+      expect(capturedBody!.route).toBe("");
+      expect(capturedBody!.pageTitle).toBe("");
+      expect(capturedBody!.message).toBe("hello");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("adapter integration — route context in request body", () => {
   it("sends route and pageTitle in request body when callbacks are provided", async () => {
     const { createKonciergeAdapter } = await import("./koncierge-adapter");

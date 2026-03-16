@@ -258,7 +258,7 @@ export function KonciergePanel({
             <ComposerPrimitive.Root style={composerStyle}>
               <ComposerPrimitive.Input
                 placeholder="Type a message..."
-                style={inputStyle}
+                style={inputStyle as unknown as Record<string, unknown>}
                 autoFocus
               />
               <ComposerPrimitive.Send style={sendButtonStyle}>

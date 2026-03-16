@@ -82,8 +82,8 @@ export function createKonciergeAdapter(
         }
       }
 
-      // Final yield with complete text
-      return { content: [{ type: "text" as const, text: fullText }] };
+      // Final yield with complete text (if not already yielded)
+      yield { content: [{ type: "text" as const, text: fullText }] };
     },
   };
 }

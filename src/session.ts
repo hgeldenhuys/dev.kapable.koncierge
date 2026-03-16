@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream";
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
 
 const MODEL = "claude-sonnet-4-20250514";
@@ -86,7 +87,7 @@ export interface RouteContext {
 /**
  * Build the full user message with optional route context prefix.
  */
-function buildUserMessage(message: string, ctx?: RouteContext): string {
+export function buildUserMessage(message: string, ctx?: RouteContext): string {
   if (!ctx) return message;
   const parts: string[] = [];
   if (ctx.route) parts.push(`Current route: ${ctx.route}`);
@@ -106,7 +107,7 @@ export function chatStream(
   conversation: ConversationSession,
   userMessage: string,
   routeContext?: RouteContext,
-): MessageStream {
+): MessageStream<null> {
   const fullMessage = buildUserMessage(userMessage, routeContext);
   conversation.history.push({ role: "user", content: fullMessage });
 
