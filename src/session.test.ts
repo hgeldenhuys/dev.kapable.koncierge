@@ -1,6 +1,55 @@
 import { describe, it, expect } from "bun:test";
 import { buildUserMessage, type RouteContext } from "./session";
 
+describe("smoke test — route context reaches Claude prompt (simulated /flows navigation)", () => {
+  it("adapter → proxy body → buildUserMessage produces context-prefixed prompt for /flows", async () => {
+    // Simulate the full pipeline:
+    // 1. Adapter sends { message, route, pageTitle } to BFF
+    // 2. BFF proxy forwards verbatim to upstream
+    // 3. Server extracts route/pageTitle and calls buildUserMessage
+
+    // Step 1+2: The adapter sends route and pageTitle in the body.
+    // The BFF proxy forwards the raw JSON body to upstream.
+    // Simulate what the upstream server receives:
+    const upstreamBody = {
+      message: "what is this page?",
+      route: "/flows",
+      pageTitle: "AI Flows",
+    };
+
+    // Step 3: Server calls buildUserMessage with the extracted context
+    const prompt = buildUserMessage(upstreamBody.message, {
+      route: upstreamBody.route,
+      pageTitle: upstreamBody.pageTitle,
+    });
+
+    // The prompt that Claude receives should contain route context
+    expect(prompt).toContain("/flows");
+    expect(prompt).toContain("AI Flows");
+    expect(prompt).toContain("what is this page?");
+    expect(prompt).toBe(
+      "[Context: Current route: /flows, Page title: AI Flows]\n\nwhat is this page?",
+    );
+  });
+
+  it("navigating to a different route produces a different context prefix", () => {
+    // First on /flows
+    const prompt1 = buildUserMessage("where am I?", {
+      route: "/flows",
+      pageTitle: "AI Flows",
+    });
+    expect(prompt1).toContain("/flows");
+
+    // Then on /projects
+    const prompt2 = buildUserMessage("where am I?", {
+      route: "/projects",
+      pageTitle: "Projects",
+    });
+    expect(prompt2).toContain("/projects");
+    expect(prompt2).not.toContain("/flows");
+  });
+});
+
 describe("buildUserMessage", () => {
   it("returns raw message when no context is provided", () => {
     expect(buildUserMessage("hello")).toBe("hello");

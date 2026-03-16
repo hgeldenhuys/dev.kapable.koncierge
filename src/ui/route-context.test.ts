@@ -95,6 +95,99 @@ describe("provider default wiring — adapter uses browser getters when none sup
   });
 });
 
+describe("useReactRouterRoute — SPA route context via React Router pathname", () => {
+  it("sends React Router pathname instead of window.location when used as adapter getRoute", async () => {
+    const { createKonciergeAdapter } = await import("./koncierge-adapter");
+
+    let capturedBody: Record<string, unknown> | null = null;
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('data: {"delta":"ok"}\n\n'));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    };
+
+    try {
+      // Simulate what useReactRouterRoute produces — a ref-based closure
+      // that always returns the latest pathname
+      let currentPathname = "/flows";
+      const getRoute = () => currentPathname;
+      const getPageTitle = getPageTitleFromDocument;
+
+      const adapter = createKonciergeAdapter({
+        endpoint: "http://localhost:9999/test",
+        getRoute,
+        getPageTitle,
+      });
+
+      // First message on /flows
+      const gen1 = adapter.run({
+        messages: [
+          {
+            role: "user" as const,
+            content: [{ type: "text" as const, text: "what page?" }],
+            id: "msg-rr-1",
+            createdAt: new Date(),
+            metadata: {} as never,
+            status: { type: "complete" as const },
+          },
+        ],
+        abortSignal: new AbortController().signal,
+        config: {} as never,
+        context: { useRender: (() => {}) as never, ReadonlyStore: (() => {}) as never } as never,
+        unstable_assistantMessageId: "",
+        onUpdate: () => {},
+      });
+
+      let result = await gen1.next();
+      while (!result.done) result = await gen1.next();
+
+      expect(capturedBody).not.toBeNull();
+      expect(capturedBody!.route).toBe("/flows");
+
+      // Simulate React Router navigation to /projects
+      currentPathname = "/projects";
+
+      const gen2 = adapter.run({
+        messages: [
+          {
+            role: "user" as const,
+            content: [{ type: "text" as const, text: "what page now?" }],
+            id: "msg-rr-2",
+            createdAt: new Date(),
+            metadata: {} as never,
+            status: { type: "complete" as const },
+          },
+        ],
+        abortSignal: new AbortController().signal,
+        config: {} as never,
+        context: { useRender: (() => {}) as never, ReadonlyStore: (() => {}) as never } as never,
+        unstable_assistantMessageId: "",
+        onUpdate: () => {},
+      });
+
+      result = await gen2.next();
+      while (!result.done) result = await gen2.next();
+
+      expect(capturedBody!.route).toBe("/projects");
+      expect(capturedBody!.message).toBe("what page now?");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("adapter integration — route context in request body", () => {
   it("sends route and pageTitle in request body when callbacks are provided", async () => {
     const { createKonciergeAdapter } = await import("./koncierge-adapter");

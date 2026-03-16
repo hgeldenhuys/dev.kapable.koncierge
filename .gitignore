@@ -1,6 +1,7 @@
 node_modules/
 .env
 *.log
+logs/
 .DS_Store
 
 # Epic Runner ephemeral config (contains API keys — must never be committed)

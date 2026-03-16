@@ -28,3 +28,10 @@ export {
   generateSessionToken,
   generateSessionTokenFromEnv,
 } from "./session-token";
+
+export {
+  extractKonciergeToken,
+  extractKonciergeTokenFromEnv,
+} from "./extract-user-token";
+
+export type { AuthIdentity } from "./extract-user-token";

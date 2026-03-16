@@ -101,6 +101,118 @@ dev.kapable.koncierge/
   package.json                     ← project config
 ```
 
+## Running the Koncierge Server
+
+### Prerequisites
+
+```bash
+cp .env.example .env
+# Fill in ANTHROPIC_API_KEY and KONCIERGE_SECRET
+```
+
+### Development (auto-restart on crash)
+
+```bash
+# Standalone — starts with --watch and auto-restart
+bun run dev:managed
+
+# Or the simpler watch-only mode (no crash recovery)
+bun run dev
+```
+
+**From the console project**, add to `dev.kapable.console/package.json`:
+
+```json
+{
+  "scripts": {
+    "dev:koncierge": "bun run ../dev.kapable.koncierge/scripts/dev-with-koncierge.ts",
+    "dev:all": "bun run dev & bun run dev:koncierge"
+  }
+}
+```
+
+Then `bun run dev:all` starts both the console and Koncierge concurrently. The managed runner:
+- Loads `.env` from the Koncierge project root
+- Auto-restarts on crash (up to 5 times per 60s window)
+- Waits for `/health` to respond before printing "ready"
+- Forwards SIGINT/SIGTERM for clean shutdown
+
+### Always-On Service (Mac Studio via launchd)
+
+For production/always-on availability on the Mac Studio, install as a launchd user agent:
+
+```bash
+# Install and start (reads .env for ANTHROPIC_API_KEY and KONCIERGE_SECRET)
+bun run service:install
+
+# Check status + health
+bun run service:status
+
+# View logs
+bun run service:logs
+
+# Stop and remove
+bun run service:uninstall
+```
+
+The installer creates `~/Library/LaunchAgents/dev.kapable.koncierge.plist` with:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.kapable.koncierge</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/path/to/bun</string>
+    <string>run</string>
+    <string>src/server.ts</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/path/to/dev.kapable.koncierge</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>ANTHROPIC_API_KEY</key>
+    <string>sk-ant-...</string>
+    <key>KONCIERGE_SECRET</key>
+    <string>your-shared-secret</string>
+    <key>PORT</key>
+    <string>3101</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/path/to/dev.kapable.koncierge/logs/koncierge.stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/path/to/dev.kapable.koncierge/logs/koncierge.stderr.log</string>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>
+```
+
+Key launchd behaviours:
+- **RunAtLoad** — starts automatically on login
+- **KeepAlive.SuccessfulExit=false** — restarts if the process exits with a non-zero code
+- **ThrottleInterval=10** — waits 10s between restart attempts to avoid tight loops
+- Logs go to `logs/koncierge.{stdout,stderr}.log`
+
 ## Open Questions
 
 - [ ] WebSocket vs SSE for chat streaming?

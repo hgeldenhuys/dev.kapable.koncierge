@@ -11,6 +11,11 @@
   "scripts": {
     "start": "bun run src/server.ts",
     "dev": "bun --watch run src/server.ts",
+    "dev:managed": "bun run scripts/dev-with-koncierge.ts",
+    "service:install": "./scripts/launchd-service.sh install",
+    "service:uninstall": "./scripts/launchd-service.sh uninstall",
+    "service:status": "./scripts/launchd-service.sh status",
+    "service:logs": "./scripts/launchd-service.sh logs",
     "test": "bun test",
     "distill": "echo 'Run knowledge distillation agents — see PLAN.md Phase 0'",
     "merge": "echo 'Merge subsystem docs into KAPABLE_KNOWLEDGE_BASE.md'"

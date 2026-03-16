@@ -242,7 +242,7 @@ describe("configFromEnv", () => {
 
 // ── proxyKonciergeMessage — route/pageTitle forwarding ─────────
 describe("BFF proxy — route context forwarding", () => {
-  it("forwards route and pageTitle to upstream", async () => {
+  it("forwards route and pageTitle to upstream without stripping fields", async () => {
     const req = makeRequest({
       message: "help",
       route: "/settings/team",
@@ -257,5 +257,56 @@ describe("BFF proxy — route context forwarding", () => {
         ? result.body
         : await new Response(result.body).text();
     expect(text).toContain("help!");
+  });
+
+  it("preserves route and pageTitle in upstream request body (verified by mock)", async () => {
+    // Use a dedicated mock that captures and validates the body fields
+    const capturePort = 39_203;
+    let capturedBody: Record<string, unknown> | null = null;
+
+    const captureMock = Bun.serve({
+      port: capturePort,
+      async fetch(req) {
+        const url = new URL(req.url);
+        if (req.method === "POST" && url.pathname === "/v1/koncierge/message") {
+          capturedBody = await req.json();
+          const encoder = new TextEncoder();
+          const readable = new ReadableStream({
+            start(controller) {
+              controller.enqueue(encoder.encode('data: {"delta":"ack"}\n\n'));
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              controller.close();
+            },
+          });
+          return new Response(readable, {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          });
+        }
+        return Response.json({ error: "Not Found" }, { status: 404 });
+      },
+    });
+
+    try {
+      const captureConfig: BffProxyConfig = {
+        konciergeUrl: `http://localhost:${capturePort}`,
+        konciergeSecret: "any",
+      };
+
+      const req = makeRequest({
+        message: "where am I?",
+        route: "/flows",
+        pageTitle: "AI Flows",
+      });
+      const result = await proxyKonciergeMessage(req, captureConfig, "tok-123");
+
+      expect(result.status).toBe(200);
+      expect(capturedBody).not.toBeNull();
+      expect(capturedBody!.route).toBe("/flows");
+      expect(capturedBody!.pageTitle).toBe("AI Flows");
+      expect(capturedBody!.message).toBe("where am I?");
+    } finally {
+      captureMock.stop();
+    }
   });
 });

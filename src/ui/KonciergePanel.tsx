@@ -4,7 +4,8 @@ import {
   MessagePrimitive,
   useMessagePartText,
 } from "@assistant-ui/react";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { parseToolCalls, type KonciergeToolCall } from "./tool-calls";
 
 // ─── Inline styles (self-contained, no external CSS required) ────────────────
 
@@ -158,11 +159,31 @@ const fabStyle: CSSProperties = {
   boxShadow: "0 4px 12px rgba(59, 130, 246, 0.4)",
 };
 
+// ─── Tool execution context ──────────────────────────────────────────────────
+
+type ToolExecutor = (toolCalls: KonciergeToolCall[]) => void;
+
+const KonciergeToolsContext = createContext<ToolExecutor | null>(null);
+
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 function TextPart() {
   const { text } = useMessagePartText();
-  return <span>{text}</span>;
+  const executeTools = useContext(KonciergeToolsContext);
+  const executedRef = useRef<string>("");
+
+  const { displayText, toolCalls } = parseToolCalls(text);
+
+  // Execute tool calls once when they appear (deduplicate by JSON key)
+  useEffect(() => {
+    if (toolCalls.length === 0 || !executeTools) return;
+    const key = JSON.stringify(toolCalls);
+    if (executedRef.current === key) return;
+    executedRef.current = key;
+    executeTools(toolCalls);
+  }, [toolCalls, executeTools]);
+
+  return <span>{displayText}</span>;
 }
 
 function UserMessage() {
@@ -200,6 +221,12 @@ export interface KonciergePanelProps {
   emptyContent?: ReactNode;
   /** Custom CSS class for the container */
   className?: string;
+  /**
+   * Callback to execute tool calls extracted from assistant messages.
+   * Typically provided by useKonciergeTools().executeTools.
+   * If omitted, tool calls are parsed and stripped but not executed.
+   */
+  onToolCalls?: (toolCalls: KonciergeToolCall[]) => void;
 }
 
 /**
@@ -211,73 +238,79 @@ export interface KonciergePanelProps {
  * - Message thread with auto-scroll
  * - Text input with send button
  * - FAB toggle when collapsed
+ *
+ * When `onToolCalls` is provided, embedded tool call JSON is stripped from
+ * displayed messages and dispatched for execution (navigate, highlight, etc.).
  */
 export function KonciergePanel({
   title = "Koncierge",
   defaultCollapsed = true,
   emptyContent,
   className,
+  onToolCalls,
 }: KonciergePanelProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
   return (
-    <div style={panelContainerStyle} className={className}>
-      {!collapsed && (
-        <div style={panelStyle}>
-          {/* Header */}
-          <div style={headerStyle}>
-            <h3 style={headerTitleStyle}>{title}</h3>
-            <button
-              type="button"
-              style={collapseButtonStyle}
-              onClick={() => setCollapsed(true)}
-              aria-label="Collapse chat"
-            >
-              &times;
-            </button>
+    <KonciergeToolsContext.Provider value={onToolCalls ?? null}>
+      <div style={panelContainerStyle} className={className}>
+        {!collapsed && (
+          <div style={panelStyle}>
+            {/* Header */}
+            <div style={headerStyle}>
+              <h3 style={headerTitleStyle}>{title}</h3>
+              <button
+                type="button"
+                style={collapseButtonStyle}
+                onClick={() => setCollapsed(true)}
+                aria-label="Collapse chat"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Thread viewport with auto-scroll */}
+            <ThreadPrimitive.Root>
+              <ThreadPrimitive.Viewport style={viewportStyle}>
+                <ThreadPrimitive.Empty>
+                  <div style={emptyStyle}>
+                    {emptyContent ?? "Ask me anything about Kapable!"}
+                  </div>
+                </ThreadPrimitive.Empty>
+
+                <ThreadPrimitive.Messages
+                  components={{
+                    UserMessage,
+                    AssistantMessage,
+                  }}
+                />
+              </ThreadPrimitive.Viewport>
+
+              {/* Composer: input + send */}
+              <ComposerPrimitive.Root style={composerStyle}>
+                <ComposerPrimitive.Input
+                  placeholder="Type a message..."
+                  style={inputStyle as unknown as Record<string, unknown>}
+                  autoFocus
+                />
+                <ComposerPrimitive.Send style={sendButtonStyle}>
+                  Send
+                </ComposerPrimitive.Send>
+              </ComposerPrimitive.Root>
+            </ThreadPrimitive.Root>
           </div>
+        )}
 
-          {/* Thread viewport with auto-scroll */}
-          <ThreadPrimitive.Root>
-            <ThreadPrimitive.Viewport style={viewportStyle}>
-              <ThreadPrimitive.Empty>
-                <div style={emptyStyle}>
-                  {emptyContent ?? "Ask me anything about Kapable!"}
-                </div>
-              </ThreadPrimitive.Empty>
-
-              <ThreadPrimitive.Messages
-                components={{
-                  UserMessage,
-                  AssistantMessage,
-                }}
-              />
-            </ThreadPrimitive.Viewport>
-
-            {/* Composer: input + send */}
-            <ComposerPrimitive.Root style={composerStyle}>
-              <ComposerPrimitive.Input
-                placeholder="Type a message..."
-                style={inputStyle as unknown as Record<string, unknown>}
-                autoFocus
-              />
-              <ComposerPrimitive.Send style={sendButtonStyle}>
-                Send
-              </ComposerPrimitive.Send>
-            </ComposerPrimitive.Root>
-          </ThreadPrimitive.Root>
-        </div>
-      )}
-
-      {/* FAB toggle */}
-      <button
-        type="button"
-        style={fabStyle}
-        onClick={() => setCollapsed((c) => !c)}
-        aria-label={collapsed ? "Open chat" : "Close chat"}
-      >
-        {collapsed ? "?" : "\u2013"}
-      </button>
-    </div>
+        {/* FAB toggle */}
+        <button
+          type="button"
+          style={fabStyle}
+          onClick={() => setCollapsed((c) => !c)}
+          aria-label={collapsed ? "Open chat" : "Close chat"}
+        >
+          {collapsed ? "?" : "\u2013"}
+        </button>
+      </div>
+    </KonciergeToolsContext.Provider>
   );
 }

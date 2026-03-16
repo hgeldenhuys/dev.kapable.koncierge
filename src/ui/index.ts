@@ -22,4 +22,18 @@ export type { KonciergeAdapterConfig } from "./koncierge-adapter";
 
 export { parseSSE } from "./parse-sse";
 
-export { getRouteFromLocation, getPageTitleFromDocument } from "./route-context";
+export { getRouteFromLocation, getPageTitleFromDocument, useReactRouterRoute } from "./route-context";
+export type { RouteContextCallbacks } from "./route-context";
+
+export { parseToolCalls } from "./tool-calls";
+export type {
+  KonciergeToolCall,
+  NavigateToolCall,
+  HighlightToolCall,
+  TooltipToolCall,
+  ShowSectionToolCall,
+  ParsedMessage,
+} from "./tool-calls";
+
+export { useKonciergeTools } from "./useKonciergeTools";
+export type { UseKonciergeToolsConfig, UseKonciergeToolsReturn } from "./useKonciergeTools";
