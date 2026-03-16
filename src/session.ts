@@ -146,8 +146,16 @@ export async function createSession(): Promise<KonciergeCore> {
   ];
 
   // Task 3 — Initialise Anthropic client
-  // ANTHROPIC_API_KEY is read from env automatically by the SDK
-  const client = new Anthropic();
+  // Support both direct Anthropic keys and OpenRouter keys.
+  // If OPENROUTER_API_KEY is set, use OpenRouter as the base URL.
+  // Otherwise, ANTHROPIC_API_KEY is read from env automatically by the SDK.
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
+  const client = openrouterKey
+    ? new Anthropic({
+        apiKey: openrouterKey,
+        baseURL: "https://openrouter.ai/api/v1",
+      })
+    : new Anthropic();
 
   return {
     client,
