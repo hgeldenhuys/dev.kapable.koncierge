@@ -106,16 +106,20 @@ export function chatStream(
   conversation: ConversationSession,
   userMessage: string,
   routeContext?: RouteContext,
-): MessageStream {
+  signal?: AbortSignal,
+) {
   const fullMessage = buildUserMessage(userMessage, routeContext);
   conversation.history.push({ role: "user", content: fullMessage });
 
-  const stream = core.client.messages.stream({
-    model: MODEL,
-    max_tokens: 2048,
-    system: core.systemPrompt,
-    messages: conversation.history,
-  });
+  const stream = core.client.messages.stream(
+    {
+      model: MODEL,
+      max_tokens: 2048,
+      system: core.systemPrompt,
+      messages: conversation.history,
+    },
+    signal ? { signal } : undefined,
+  );
 
   return stream;
 }
