@@ -7,6 +7,29 @@ import {
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { parseToolCalls, type KonciergeToolCall } from "./tool-calls";
 
+// ─── localStorage persistence ────────────────────────────────────────────────
+
+const STORAGE_KEY = "koncierge-collapsed";
+
+function readCollapsed(fallback: boolean): boolean {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === "true") return true;
+    if (stored === "false") return false;
+  } catch {
+    // SSR or storage unavailable — fall through
+  }
+  return fallback;
+}
+
+function writeCollapsed(value: boolean): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, String(value));
+  } catch {
+    // quota exceeded or unavailable — silently ignore
+  }
+}
+
 // ─── Inline styles (self-contained, no external CSS required) ────────────────
 
 const panelContainerStyle: CSSProperties = {
@@ -22,6 +45,7 @@ const panelContainerStyle: CSSProperties = {
 
 const panelStyle: CSSProperties = {
   width: 380,
+  maxWidth: "calc(100vw - 32px)",
   maxHeight: "70vh",
   display: "flex",
   flexDirection: "column",
@@ -57,6 +81,11 @@ const collapseButtonStyle: CSSProperties = {
   color: "#64748b",
   padding: "0 4px",
   lineHeight: 1,
+  minWidth: 44,
+  minHeight: 44,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
 };
 
 const viewportStyle: CSSProperties = {
@@ -121,6 +150,7 @@ const composerStyle: CSSProperties = {
 
 const inputStyle: CSSProperties = {
   flex: 1,
+  minWidth: 0,
   border: "1px solid #e2e8f0",
   borderRadius: 8,
   padding: "8px 12px",
@@ -130,6 +160,7 @@ const inputStyle: CSSProperties = {
   fontFamily: "inherit",
   lineHeight: 1.4,
   maxHeight: 100,
+  boxSizing: "border-box",
 };
 
 const sendButtonStyle: CSSProperties = {
@@ -142,6 +173,8 @@ const sendButtonStyle: CSSProperties = {
   fontWeight: 600,
   cursor: "pointer",
   whiteSpace: "nowrap",
+  minHeight: 44,
+  minWidth: 44,
 };
 
 const fabStyle: CSSProperties = {
@@ -249,7 +282,11 @@ export function KonciergePanel({
   className,
   onToolCalls,
 }: KonciergePanelProps) {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const [collapsed, setCollapsed] = useState(() => readCollapsed(defaultCollapsed));
+
+  useEffect(() => {
+    writeCollapsed(collapsed);
+  }, [collapsed]);
 
   return (
     <KonciergeToolsContext.Provider value={onToolCalls ?? null}>
