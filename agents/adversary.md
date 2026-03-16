@@ -87,11 +87,34 @@ For the Koncierge objective specifically:
 - Check `src/session.ts` — does it maintain sessions between messages?
 - Does the console pass a session token/ID?
 
-## Verification
+## Definitive Verification (DO THIS FIRST)
 
-- **Run `bun test` in THIS repo** to verify backend tests pass
-- **Run `bun build` or check build config in `../dev.kapable.console/`** to verify frontend compiles
-- If tests fail, that IS a gap — code that doesn't pass tests is not working code
+Before reporting ANY gap, run these definitive checks. If all pass, the integration is likely working and you should look for DEEPER gaps (voice, deploy, session persistence) not surface-level ones.
+
+### Build check (MANDATORY)
+```bash
+cd ../dev.kapable.console && npx react-router build 2>&1 | tail -5
+```
+If this succeeds, the console compiles with all Koncierge imports resolved.
+
+### Mount check (MANDATORY)
+```bash
+grep -c "KonciergePanel" ../dev.kapable.console/app/routes/_app.tsx
+```
+If this returns > 0, the panel IS mounted in the console layout.
+
+### BFF proxy check
+```bash
+grep -c "koncierge" ../dev.kapable.console/app/routes.ts
+```
+If > 0, the BFF route is registered.
+
+### Backend test check
+```bash
+cd /Users/hgeldenhuys/WebstormProjects/kapable/dev.kapable.koncierge && bun test 2>&1 | tail -3
+```
+
+**IMPORTANT:** If the console builds AND KonciergePanel is in _app.tsx AND the BFF route exists AND tests pass — the chat panel integration IS complete. Do NOT report "panel not mounted" or "panel not wired". Look for the NEXT gap: voice, deployment, session persistence, or declare SATISFIED.
 
 ## Output Format
 
