@@ -41,6 +41,8 @@ const panelContainerStyle: CSSProperties = {
   flexDirection: "column",
   alignItems: "flex-end",
   fontFamily: "system-ui, -apple-system, sans-serif",
+  maxWidth: "calc(100vw - 32px)",
+  boxSizing: "border-box",
 };
 
 const panelStyle: CSSProperties = {
@@ -54,6 +56,7 @@ const panelStyle: CSSProperties = {
   boxShadow: "0 8px 32px rgba(0, 0, 0, 0.12)",
   overflow: "hidden",
   marginBottom: 8,
+  colorScheme: "light",
 };
 
 const headerStyle: CSSProperties = {
@@ -214,6 +217,28 @@ const fabStyle: CSSProperties = {
   boxShadow: "0 4px 12px rgba(59, 130, 246, 0.4)",
 };
 
+// ─── Scoped styles for pseudo-selectors (can't be done with inline styles) ───
+
+const SCOPED_CLASS = "koncierge-panel";
+
+const scopedCSS = `
+.${SCOPED_CLASS} textarea::placeholder,
+.${SCOPED_CLASS} input::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1;
+}
+.${SCOPED_CLASS} textarea,
+.${SCOPED_CLASS} input {
+  color: #1e293b !important;
+  background-color: #ffffff !important;
+}
+@media (max-width: 480px) {
+  .${SCOPED_CLASS} {
+    max-height: 60vh;
+  }
+}
+`;
+
 // ─── Tool execution context ──────────────────────────────────────────────────
 
 type ToolExecutor = (toolCalls: KonciergeToolCall[]) => void;
@@ -312,9 +337,10 @@ export function KonciergePanel({
 
   return (
     <KonciergeToolsContext.Provider value={onToolCalls ?? null}>
+      <style dangerouslySetInnerHTML={{ __html: scopedCSS }} />
       <div style={panelContainerStyle} className={className}>
         {!collapsed && (
-          <div style={panelStyle}>
+          <div style={panelStyle} className={SCOPED_CLASS}>
             {/* Header */}
             <div style={headerStyle}>
               <h3 style={headerTitleStyle}>{title}</h3>

@@ -30,7 +30,8 @@
  */
 
 import { useMemo, type ReactNode } from "react";
-import { KonciergeRuntimeProvider, type KonciergeAdapterConfig } from "./KonciergeRuntimeProvider";
+import { KonciergeRuntimeProvider } from "./KonciergeRuntimeProvider";
+import type { KonciergeAdapterConfig } from "./koncierge-adapter";
 import { KonciergePanel, type KonciergePanelProps } from "./KonciergePanel";
 import { useKonciergeTools } from "./useKonciergeTools";
 import { useReactRouterRoute } from "./route-context";

@@ -186,9 +186,9 @@ export function useKonciergeTools(
           highlightElement(tc.args.selector, DEFAULT_HIGHLIGHT_MS);
           break;
       }
-    } catch {
-      // Silently swallow tool execution errors (bad selector, missing element, etc.)
-      // so the chat panel never crashes from a failed tool call.
+    } catch (err) {
+      // Log but don't throw — the chat panel must never crash from a failed tool call.
+      console.error("[Koncierge] Tool execution failed:", tc.tool, err);
     }
   }, []);
 
