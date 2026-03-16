@@ -304,7 +304,20 @@ export function KonciergePanel({
   className,
   onToolCalls,
 }: KonciergePanelProps) {
-  const [collapsed, setCollapsed] = useState(() => readCollapsed(defaultCollapsed));
+  // Always start with the defaultCollapsed prop to match the server render.
+  // Hydrating with a localStorage-derived value would cause React error #418
+  // because the server snapshot has no access to localStorage.
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+
+  // Sync from localStorage on mount (client-only) — this runs AFTER hydration
+  // so no mismatch occurs. If the stored value differs from defaultCollapsed,
+  // React batches the state update into the first paint.
+  useEffect(() => {
+    const stored = readCollapsed(defaultCollapsed);
+    if (stored !== defaultCollapsed) {
+      setCollapsed(stored);
+    }
+  }, [defaultCollapsed]);
 
   useEffect(() => {
     writeCollapsed(collapsed);
