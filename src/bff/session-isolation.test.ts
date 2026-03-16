@@ -15,19 +15,18 @@ import { extractKonciergeToken, type AuthIdentity } from "./extract-user-token";
  */
 
 const TEST_SECRET = "isolation-test-secret";
-const MOCK_PORT = 39_301;
-const MOCK_URL = `http://localhost:${MOCK_PORT}`;
 
 // In-memory "conversation store" in the mock backend
 const conversations = new Map<string, string[]>();
 
 let mockServer: ReturnType<typeof Bun.serve>;
+let MOCK_URL: string;
 
 beforeAll(() => {
   conversations.clear();
 
   mockServer = Bun.serve({
-    port: MOCK_PORT,
+    port: 0, // OS-assigned port avoids parallel test collisions
     async fetch(req) {
       const url = new URL(req.url);
 
@@ -74,6 +73,8 @@ beforeAll(() => {
       return Response.json({ error: "Not Found" }, { status: 404 });
     },
   });
+
+  MOCK_URL = `http://localhost:${mockServer.port}`;
 });
 
 afterAll(() => {
@@ -81,10 +82,9 @@ afterAll(() => {
   conversations.clear();
 });
 
-const config: BffProxyConfig = {
-  konciergeUrl: MOCK_URL,
-  konciergeSecret: TEST_SECRET,
-};
+function getConfig(): BffProxyConfig {
+  return { konciergeUrl: MOCK_URL, konciergeSecret: TEST_SECRET };
+}
 
 function makeRequest(message: string): Request {
   return new Request(`${MOCK_URL}/api/koncierge/message`, {
@@ -111,21 +111,21 @@ describe("Session isolation — two users get independent histories", () => {
     expect(aliceToken).not.toBe(bobToken);
 
     // Alice sends "Hello from Alice"
-    const aliceRes1 = await handleKonciergeProxy(makeRequest("Hello from Alice"), config, aliceToken);
+    const aliceRes1 = await handleKonciergeProxy(makeRequest("Hello from Alice"), getConfig(), aliceToken);
     expect(aliceRes1.status).toBe(200);
     const aliceText1 = await aliceRes1.text();
     expect(aliceText1).toContain("Hello from Alice");
     expect(aliceText1).not.toContain("Bob");
 
     // Bob sends "Hello from Bob"
-    const bobRes1 = await handleKonciergeProxy(makeRequest("Hello from Bob"), config, bobToken);
+    const bobRes1 = await handleKonciergeProxy(makeRequest("Hello from Bob"), getConfig(), bobToken);
     expect(bobRes1.status).toBe(200);
     const bobText1 = await bobRes1.text();
     expect(bobText1).toContain("Hello from Bob");
     expect(bobText1).not.toContain("Alice");
 
     // Alice sends a second message — should see both her messages, none of Bob's
-    const aliceRes2 = await handleKonciergeProxy(makeRequest("Alice again"), config, aliceToken);
+    const aliceRes2 = await handleKonciergeProxy(makeRequest("Alice again"), getConfig(), aliceToken);
     expect(aliceRes2.status).toBe(200);
     const aliceText2 = await aliceRes2.text();
     expect(aliceText2).toContain("Hello from Alice");
@@ -133,7 +133,7 @@ describe("Session isolation — two users get independent histories", () => {
     expect(aliceText2).not.toContain("Bob");
 
     // Bob sends a second message — should see both his messages, none of Alice's
-    const bobRes2 = await handleKonciergeProxy(makeRequest("Bob again"), config, bobToken);
+    const bobRes2 = await handleKonciergeProxy(makeRequest("Bob again"), getConfig(), bobToken);
     expect(bobRes2.status).toBe(200);
     const bobText2 = await bobRes2.text();
     expect(bobText2).toContain("Hello from Bob");
