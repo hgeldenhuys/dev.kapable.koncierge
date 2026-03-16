@@ -2,7 +2,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream";
 import type { MessageParam, Tool, ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
 
-const MODEL = "claude-sonnet-4-20250514";
+const OPENROUTER_KEY = process.env["OPENROUTER_API_KEY"] ?? "";
+const MODEL = process.env["KONCIERGE_MODEL"]
+  || (OPENROUTER_KEY ? "anthropic/claude-sonnet-4-20250514" : "claude-sonnet-4-20250514");
 
 // ─── Koncierge tool definitions for the Claude API ──────────────────────────
 
@@ -145,9 +147,10 @@ export async function createSession(): Promise<KonciergeCore> {
     },
   ];
 
-  // Task 3 — Initialise Anthropic client
-  // ANTHROPIC_API_KEY is read from env automatically by the SDK
-  const client = new Anthropic();
+  // Task 3 — Initialise Anthropic client (or OpenRouter-compatible)
+  const client = OPENROUTER_KEY
+    ? new Anthropic({ apiKey: OPENROUTER_KEY, baseURL: "https://openrouter.ai/api" })
+    : new Anthropic();
 
   return {
     client,
