@@ -153,7 +153,7 @@ export async function createSession(): Promise<KonciergeCore> {
   const client = openRouterKey
     ? new Anthropic({
         apiKey: openRouterKey,
-        baseURL: "https://openrouter.ai/api/v1",
+        baseURL: "https://openrouter.ai/api",
       })
     : new Anthropic();
 
