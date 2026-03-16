@@ -158,7 +158,7 @@ describe("createKonciergeAdapter", () => {
     expect(capturedHeaders!.get("Content-Type")).toBe("application/json");
   });
 
-  it("throws on non-OK response", async () => {
+  it("yields error message and calls onError on non-OK response", async () => {
     const original = globalThis.fetch;
     globalThis.fetch = async () => {
       return new Response(JSON.stringify({ error: "Bad request" }), {
@@ -167,32 +167,54 @@ describe("createKonciergeAdapter", () => {
     };
     savedFetch = original;
 
-    const adapter = createKonciergeAdapter({ endpoint: "/test" });
+    const errors: string[] = [];
+    const adapter = createKonciergeAdapter({
+      endpoint: "/test",
+      onError: (msg) => errors.push(msg),
+    });
     const gen = adapter.run(makeRunOptions("hi"));
 
-    try {
-      await gen.next();
-      expect(true).toBe(false); // should not reach here
-    } catch (err) {
-      expect((err as Error).message).toContain("400");
+    const yields: Array<{ content: Array<{ type: string; text: string }> }> = [];
+    let result = await gen.next();
+    while (!result.done) {
+      yields.push(result.value as never);
+      result = await gen.next();
     }
+
+    // Should yield a user-friendly error message
+    expect(yields.length).toBeGreaterThanOrEqual(1);
+    expect(yields[0].content[0].text).toContain("Sorry");
+    // Should have called onError with status code
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain("400");
   });
 
-  it("throws on SSE error event", async () => {
+  it("yields error text and calls onError on SSE error event", async () => {
     savedFetch = mockFetch([
       'data: {"error":"Rate limited"}\n\n',
       "data: [DONE]\n\n",
     ]);
 
-    const adapter = createKonciergeAdapter({ endpoint: "/test" });
+    const errors: string[] = [];
+    const adapter = createKonciergeAdapter({
+      endpoint: "/test",
+      onError: (msg) => errors.push(msg),
+    });
     const gen = adapter.run(makeRunOptions("hi"));
 
-    try {
-      await gen.next();
-      expect(true).toBe(false);
-    } catch (err) {
-      expect((err as Error).message).toContain("Rate limited");
+    const yields: Array<{ content: Array<{ type: string; text: string }> }> = [];
+    let result = await gen.next();
+    while (!result.done) {
+      yields.push(result.value as never);
+      result = await gen.next();
     }
+
+    // Should yield text containing the error
+    const lastText = yields[yields.length - 1].content[0].text;
+    expect(lastText).toContain("Rate limited");
+    // Should have called onError
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain("Rate limited");
   });
 
   it("handles empty delta stream gracefully", async () => {
