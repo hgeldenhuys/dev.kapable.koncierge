@@ -14,6 +14,8 @@ export interface KonciergeAdapterConfig {
   getRoute?: () => string;
   /** Returns the current page title for context injection */
   getPageTitle?: () => string;
+  /** Session token sent as X-Session-Token header on every request */
+  sessionToken?: string;
   /** Additional headers (e.g. auth tokens) */
   headers?: Record<string, string>;
 }
@@ -45,6 +47,7 @@ export function createKonciergeAdapter(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(config.sessionToken ? { "X-Session-Token": config.sessionToken } : {}),
           ...config.headers,
         },
         body: JSON.stringify({

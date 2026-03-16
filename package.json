@@ -5,7 +5,8 @@
   "private": true,
   "exports": {
     ".": "./src/server.ts",
-    "./ui": "./src/ui/index.ts"
+    "./ui": "./src/ui/index.ts",
+    "./bff": "./src/bff/index.ts"
   },
   "scripts": {
     "start": "bun run src/server.ts",

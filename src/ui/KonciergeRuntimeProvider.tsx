@@ -17,7 +17,10 @@ export interface KonciergeRuntimeProviderProps {
  *
  * Usage:
  * ```tsx
- * <KonciergeRuntimeProvider config={{ endpoint: "/api/koncierge/message" }}>
+ * <KonciergeRuntimeProvider config={{
+ *   endpoint: "/api/koncierge/message",
+ *   sessionToken: konciergeToken, // from auth layer / generateSessionTokenFromEnv()
+ * }}>
  *   <KonciergePanel />
  * </KonciergeRuntimeProvider>
  * ```

@@ -209,6 +209,55 @@ describe("createKonciergeAdapter", () => {
     expect(done.done).toBe(true);
   });
 
+  it("includes X-Session-Token header when sessionToken is provided", async () => {
+    const original = globalThis.fetch;
+    let capturedHeaders: Headers | null = null;
+
+    globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedHeaders = new Headers(init?.headers);
+      return new Response(
+        sseStream(['data: {"delta":"ok"}\n\ndata: [DONE]\n\n']),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    };
+    savedFetch = original;
+
+    const adapter = createKonciergeAdapter({
+      endpoint: "/test",
+      sessionToken: "my-session-token-abc",
+    });
+
+    const gen = adapter.run(makeRunOptions("hi"));
+    let result = await gen.next();
+    while (!result.done) result = await gen.next();
+
+    expect(capturedHeaders).not.toBeNull();
+    expect(capturedHeaders!.get("X-Session-Token")).toBe("my-session-token-abc");
+  });
+
+  it("omits X-Session-Token header when sessionToken is not provided", async () => {
+    const original = globalThis.fetch;
+    let capturedHeaders: Headers | null = null;
+
+    globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedHeaders = new Headers(init?.headers);
+      return new Response(
+        sseStream(['data: {"delta":"ok"}\n\ndata: [DONE]\n\n']),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    };
+    savedFetch = original;
+
+    const adapter = createKonciergeAdapter({ endpoint: "/test" });
+
+    const gen = adapter.run(makeRunOptions("hi"));
+    let result = await gen.next();
+    while (!result.done) result = await gen.next();
+
+    expect(capturedHeaders).not.toBeNull();
+    expect(capturedHeaders!.get("X-Session-Token")).toBeNull();
+  });
+
   it("extracts text from multi-part user messages", async () => {
     const { original, getCaptured } = mockFetchCapture([
       'data: {"delta":"ok"}\n\ndata: [DONE]\n\n',
