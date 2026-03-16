@@ -2,9 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream";
 import type { MessageParam, Tool, ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
 
-const MODEL = process.env.OPENROUTER_API_KEY
-  ? "anthropic/claude-sonnet-4"
-  : "claude-sonnet-4-20250514";
+const MODEL = process.env.KONCIERGE_MODEL
+  || (process.env.OPENROUTER_API_KEY ? "google/gemini-2.5-flash-preview" : "claude-sonnet-4-20250514");
 
 // ─── Koncierge tool definitions for the Claude API ──────────────────────────
 
