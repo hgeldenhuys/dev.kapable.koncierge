@@ -1,5 +1,5 @@
 import { AssistantRuntimeProvider, useLocalRuntime } from "@assistant-ui/react";
-import { createKonciergeAdapter, type KonciergeAdapterConfig } from "./koncierge-adapter";
+import { createKonciergeAdapter, type KonciergeAdapterConfig, type KonciergeToolUseEvent } from "./koncierge-adapter";
 import { getRouteFromLocation, getPageTitleFromDocument } from "./route-context";
 import { useMemo, useRef, type ReactNode } from "react";
 import type { ChatModelAdapter } from "@assistant-ui/react";
@@ -7,6 +7,11 @@ import type { ChatModelAdapter } from "@assistant-ui/react";
 export interface KonciergeRuntimeProviderProps {
   /** Configuration for the Koncierge adapter */
   config: KonciergeAdapterConfig;
+  /**
+   * Callback invoked when the agent emits a tool call (navigate, highlight, etc.).
+   * Use with useKonciergeTools() to wire up React Router navigation and DOM effects.
+   */
+  onToolCall?: (toolCall: KonciergeToolUseEvent) => void;
   children: ReactNode;
 }
 
@@ -31,12 +36,18 @@ export interface KonciergeRuntimeProviderProps {
  */
 export function KonciergeRuntimeProvider({
   config,
+  onToolCall,
   children,
 }: KonciergeRuntimeProviderProps) {
+  // Stable ref for onToolCall so the adapter doesn't get recreated on callback changes
+  const onToolCallRef = useRef(onToolCall);
+  onToolCallRef.current = onToolCall;
+
   const configWithRouteContext = useMemo(() => ({
     ...config,
     getRoute: config.getRoute ?? getRouteFromLocation,
     getPageTitle: config.getPageTitle ?? getPageTitleFromDocument,
+    onToolCall: (tc: KonciergeToolUseEvent) => onToolCallRef.current?.(tc),
   }), [config]);
 
   // Cache the adapter in a ref so it persists across re-renders

@@ -18,7 +18,7 @@ export { KonciergePanel } from "./KonciergePanel";
 export type { KonciergePanelProps } from "./KonciergePanel";
 
 export { createKonciergeAdapter } from "./koncierge-adapter";
-export type { KonciergeAdapterConfig } from "./koncierge-adapter";
+export type { KonciergeAdapterConfig, KonciergeToolUseEvent } from "./koncierge-adapter";
 
 export { parseSSE } from "./parse-sse";
 

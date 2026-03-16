@@ -1,10 +1,18 @@
 import type { ChatModelAdapter, ChatModelRunOptions } from "@assistant-ui/react";
 import { parseSSE } from "./parse-sse";
 
+/** Tool call payload emitted by the server when Claude uses a tool */
+export interface KonciergeToolUseEvent {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
 /** Shape of SSE data events from the Koncierge server */
 interface KonciergeSSEEvent {
   delta?: string;
   error?: string;
+  tool_use?: KonciergeToolUseEvent;
 }
 
 const MAX_RETRIES = 3;
@@ -34,12 +42,15 @@ export interface KonciergeAdapterConfig {
   getRoute?: () => string;
   /** Returns the current page title for context injection */
   getPageTitle?: () => string;
-  /** Session token sent as X-Session-Token header on every request */
-  sessionToken?: string;
   /** Additional headers (e.g. auth tokens) */
   headers?: Record<string, string>;
   /** Called when a non-recoverable error occurs (e.g. for toast notifications) */
   onError?: (message: string) => void;
+  /**
+   * Called when the agent emits a tool call (navigate, highlight, tooltip, showSection).
+   * The consumer should execute the tool call in the browser (e.g. React Router navigate).
+   */
+  onToolCall?: (toolCall: KonciergeToolUseEvent) => void;
 }
 
 /**
@@ -82,7 +93,6 @@ export function createKonciergeAdapter(
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              ...(config.sessionToken ? { "X-Session-Token": config.sessionToken } : {}),
               ...config.headers,
             },
             body: JSON.stringify({
@@ -145,6 +155,11 @@ export function createKonciergeAdapter(
           config.onError?.(`Koncierge error: ${event.error}`);
           fullText += `\n\n⚠️ ${event.error}`;
           yield { content: [{ type: "text" as const, text: fullText }] };
+          continue;
+        }
+
+        if (event.tool_use) {
+          config.onToolCall?.(event.tool_use);
           continue;
         }
 

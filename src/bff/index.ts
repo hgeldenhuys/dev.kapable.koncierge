@@ -35,3 +35,13 @@ export {
 } from "./extract-user-token";
 
 export type { AuthIdentity } from "./extract-user-token";
+
+export {
+  createKonciergeHandler,
+  createKonciergeRoute,
+} from "./api.koncierge.message";
+
+export type {
+  RequireAuth,
+  KonciergeRouteOptions,
+} from "./api.koncierge.message";

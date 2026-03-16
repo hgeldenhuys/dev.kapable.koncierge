@@ -1,3 +1,4 @@
+import type { ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
 import {
   createSession,
   getSession,
@@ -124,6 +125,7 @@ const server = Bun.serve({
       // Build SSE ReadableStream
       const encoder = new TextEncoder();
       let fullText = "";
+      const toolUseBlocks: ToolUseBlock[] = [];
 
       const readable = new ReadableStream({
         async start(controller) {
@@ -134,11 +136,27 @@ const server = Bun.serve({
               controller.enqueue(encoder.encode(chunk));
             });
 
+            // Capture completed content blocks — tool_use blocks are emitted as SSE events
+            stream.on("contentBlock", (block) => {
+              if (block.type === "tool_use") {
+                toolUseBlocks.push(block as ToolUseBlock);
+                const chunk = `data: ${JSON.stringify({
+                  tool_use: {
+                    id: block.id,
+                    name: block.name,
+                    input: block.input,
+                  },
+                })}\n\n`;
+                controller.enqueue(encoder.encode(chunk));
+              }
+            });
+
             // Wait for the stream to finish
             await stream.finalMessage();
 
             // Append complete assistant response to conversation history
-            appendAssistantMessage(conversation, fullText);
+            // (includes tool_use blocks + synthetic tool_results for valid history)
+            appendAssistantMessage(conversation, fullText, toolUseBlocks);
 
             // Signal completion
             controller.enqueue(encoder.encode("data: [DONE]\n\n"));

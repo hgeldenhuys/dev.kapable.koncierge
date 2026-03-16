@@ -11,6 +11,7 @@
 
 import { useCallback, useRef } from "react";
 import type { KonciergeToolCall } from "./tool-calls";
+import type { KonciergeToolUseEvent } from "./koncierge-adapter";
 
 const DEFAULT_HIGHLIGHT_MS = 3000;
 const HIGHLIGHT_CLASS = "koncierge-highlight";
@@ -108,6 +109,8 @@ function showTooltip(selector: string, text: string, durationMs: number): void {
 export interface UseKonciergeToolsConfig {
   /** React Router's navigate function for SPA navigation */
   navigate: (to: string) => void;
+  /** Optional notification callback (e.g. toast). Called when a tool executes. */
+  onNotify?: (message: string) => void;
 }
 
 export interface UseKonciergeToolsReturn {
@@ -115,6 +118,27 @@ export interface UseKonciergeToolsReturn {
   executeTool: (toolCall: KonciergeToolCall) => void;
   /** Execute an array of tool calls in sequence */
   executeTools: (toolCalls: KonciergeToolCall[]) => void;
+  /**
+   * Handle a tool_use SSE event from the adapter.
+   * Maps the server event shape to KonciergeToolCall and executes it.
+   * Pass this as `onToolCall` to KonciergeRuntimeProvider.
+   */
+  handleToolUseEvent: (event: KonciergeToolUseEvent) => void;
+}
+
+/** Route labels for toast messages */
+const ROUTE_LABELS: Record<string, string> = {
+  "/dashboard": "Dashboard",
+  "/projects": "Projects",
+  "/flows": "AI Flows",
+  "/apps": "Apps",
+  "/settings": "Settings",
+  "/pipelines": "Pipelines",
+  "/deployments": "Deployments",
+};
+
+function labelForRoute(route: string): string {
+  return ROUTE_LABELS[route] ?? route;
 }
 
 export function useKonciergeTools(
@@ -122,11 +146,14 @@ export function useKonciergeTools(
 ): UseKonciergeToolsReturn {
   const navigateRef = useRef(config.navigate);
   navigateRef.current = config.navigate;
+  const onNotifyRef = useRef(config.onNotify);
+  onNotifyRef.current = config.onNotify;
 
   const executeTool = useCallback((tc: KonciergeToolCall) => {
     switch (tc.tool) {
       case "navigate":
         navigateRef.current(tc.args.route);
+        onNotifyRef.current?.(`Navigating to ${labelForRoute(tc.args.route)}...`);
         break;
 
       case "highlight":
@@ -159,5 +186,20 @@ export function useKonciergeTools(
     [executeTool],
   );
 
-  return { executeTool, executeTools };
+  /**
+   * Bridge between the SSE tool_use event shape and the KonciergeToolCall shape.
+   * The server emits {name, input} while KonciergeToolCall uses {tool, args}.
+   */
+  const handleToolUseEvent = useCallback(
+    (event: KonciergeToolUseEvent) => {
+      const tc = {
+        tool: event.name,
+        args: event.input,
+      } as KonciergeToolCall;
+      executeTool(tc);
+    },
+    [executeTool],
+  );
+
+  return { executeTool, executeTools, handleToolUseEvent };
 }

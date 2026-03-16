@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import type { KonciergeToolCall } from "./tool-calls";
+import type { KonciergeToolUseEvent } from "./koncierge-adapter";
 
 /**
  * Unit tests for the tool execution logic (DOM helpers).
@@ -69,5 +70,39 @@ describe("tool call dispatch contract", () => {
     // Ensure all 4 tools are represented
     expect(tools).toHaveLength(4);
     expect(new Set(tools).size).toBe(4);
+  });
+});
+
+describe("KonciergeToolUseEvent → KonciergeToolCall mapping", () => {
+  it("navigate tool_use event maps to navigate tool call", () => {
+    const event: KonciergeToolUseEvent = {
+      id: "toolu_123",
+      name: "navigate",
+      input: { route: "/flows" },
+    };
+    // The bridge maps: name → tool, input → args
+    const tc = { tool: event.name, args: event.input } as KonciergeToolCall;
+    expect(tc.tool).toBe("navigate");
+    expect((tc as { args: { route: string } }).args.route).toBe("/flows");
+  });
+
+  it("highlight tool_use event maps to highlight tool call", () => {
+    const event: KonciergeToolUseEvent = {
+      id: "toolu_456",
+      name: "highlight",
+      input: { selector: "#sidebar-projects", durationMs: 5000 },
+    };
+    const tc = { tool: event.name, args: event.input } as KonciergeToolCall;
+    expect(tc.tool).toBe("highlight");
+  });
+
+  it("tooltip tool_use event maps to tooltip tool call", () => {
+    const event: KonciergeToolUseEvent = {
+      id: "toolu_789",
+      name: "tooltip",
+      input: { selector: ".btn", text: "Click me" },
+    };
+    const tc = { tool: event.name, args: event.input } as KonciergeToolCall;
+    expect(tc.tool).toBe("tooltip");
   });
 });

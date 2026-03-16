@@ -1,8 +1,85 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream";
-import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
+import type { MessageParam, Tool, ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
 
 const MODEL = "claude-sonnet-4-20250514";
+
+// ─── Koncierge tool definitions for the Claude API ──────────────────────────
+
+export const KONCIERGE_TOOLS: Tool[] = [
+  {
+    name: "navigate",
+    description:
+      "Navigate the user to a specific page in the Kapable console. Use this when the user asks to go somewhere or you want to guide them to a feature.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        route: {
+          type: "string",
+          description: "The route path to navigate to, e.g. /projects, /flows, /dashboard",
+        },
+      },
+      required: ["route"],
+    },
+  },
+  {
+    name: "highlight",
+    description:
+      "Draw attention to a UI element by highlighting it with a pulsing outline and scrolling it into view.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the element to highlight, e.g. #sidebar-projects",
+        },
+        durationMs: {
+          type: "number",
+          description: "How long to keep the highlight visible in milliseconds. Default: 3000",
+        },
+      },
+      required: ["selector"],
+    },
+  },
+  {
+    name: "tooltip",
+    description:
+      "Show a contextual tooltip near a UI element to explain what it does.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the target element",
+        },
+        text: {
+          type: "string",
+          description: "The tooltip text to display",
+        },
+        durationMs: {
+          type: "number",
+          description: "How long to show the tooltip in milliseconds. Default: 3000",
+        },
+      },
+      required: ["selector", "text"],
+    },
+  },
+  {
+    name: "showSection",
+    description:
+      "Scroll to and highlight a section of the current page.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the section to show, e.g. #environment-variables",
+        },
+      },
+      required: ["selector"],
+    },
+  },
+];
 
 /** Shared resources: Anthropic client + cached system prompt */
 export interface KonciergeCore {
@@ -116,19 +193,48 @@ export function chatStream(
     max_tokens: 2048,
     system: core.systemPrompt,
     messages: conversation.history,
+    tools: KONCIERGE_TOOLS,
   });
 
   return stream;
 }
 
 /**
- * After streaming completes, append the full assistant text to conversation history.
+ * After streaming completes, append the full assistant response to conversation history.
+ * If the response contains tool_use blocks, also append synthetic tool_result messages
+ * so the conversation remains valid for future turns.
  */
 export function appendAssistantMessage(
   conversation: ConversationSession,
   text: string,
+  toolUseBlocks?: ToolUseBlock[],
 ): void {
-  conversation.history.push({ role: "assistant", content: text });
+  if (!toolUseBlocks || toolUseBlocks.length === 0) {
+    // Simple text-only response
+    conversation.history.push({ role: "assistant", content: text });
+    return;
+  }
+
+  // Build content array with text + tool_use blocks
+  const content: Array<Anthropic.Messages.TextBlock | ToolUseBlock> = [];
+  if (text) {
+    content.push({ type: "text", text });
+  }
+  for (const block of toolUseBlocks) {
+    content.push(block);
+  }
+  conversation.history.push({ role: "assistant", content });
+
+  // Append synthetic tool_result for each tool_use so the conversation stays valid
+  const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+  for (const block of toolUseBlocks) {
+    toolResults.push({
+      type: "tool_result",
+      tool_use_id: block.id,
+      content: "Done",
+    });
+  }
+  conversation.history.push({ role: "user", content: toolResults });
 }
 
 export { MODEL };

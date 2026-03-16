@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { buildUserMessage, type RouteContext } from "./session";
+import { buildUserMessage, appendAssistantMessage, KONCIERGE_TOOLS, type RouteContext, type ConversationSession } from "./session";
+import type { ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
 
 describe("smoke test — route context reaches Claude prompt (simulated /flows navigation)", () => {
   it("adapter → proxy body → buildUserMessage produces context-prefixed prompt for /flows", async () => {
@@ -105,5 +106,78 @@ describe("buildUserMessage", () => {
   it("returns raw message when both route and pageTitle are empty strings", () => {
     const ctx: RouteContext = { route: "", pageTitle: "" };
     expect(buildUserMessage("hi", ctx)).toBe("hi");
+  });
+});
+
+describe("KONCIERGE_TOOLS", () => {
+  it("defines navigate, highlight, tooltip, and showSection tools", () => {
+    const names = KONCIERGE_TOOLS.map((t) => t.name);
+    expect(names).toContain("navigate");
+    expect(names).toContain("highlight");
+    expect(names).toContain("tooltip");
+    expect(names).toContain("showSection");
+    expect(names).toHaveLength(4);
+  });
+
+  it("navigate tool requires 'route' property", () => {
+    const nav = KONCIERGE_TOOLS.find((t) => t.name === "navigate")!;
+    const schema = nav.input_schema as { required: string[] };
+    expect(schema.required).toContain("route");
+  });
+});
+
+describe("appendAssistantMessage", () => {
+  it("appends plain text when no tool_use blocks", () => {
+    const session: ConversationSession = { history: [], createdAt: Date.now() };
+    appendAssistantMessage(session, "Hello!");
+    expect(session.history).toHaveLength(1);
+    expect(session.history[0].role).toBe("assistant");
+    expect(session.history[0].content).toBe("Hello!");
+  });
+
+  it("appends content array + synthetic tool_result when tool_use blocks present", () => {
+    const session: ConversationSession = { history: [], createdAt: Date.now() };
+    const toolBlock: ToolUseBlock = {
+      type: "tool_use",
+      id: "toolu_123",
+      name: "navigate",
+      input: { route: "/flows" },
+    };
+    appendAssistantMessage(session, "Let me take you there.", [toolBlock]);
+
+    // Should have 2 entries: assistant (text+tool_use) and user (tool_result)
+    expect(session.history).toHaveLength(2);
+
+    // Assistant message has content array
+    const assistant = session.history[0];
+    expect(assistant.role).toBe("assistant");
+    expect(Array.isArray(assistant.content)).toBe(true);
+    const blocks = assistant.content as Array<{ type: string }>;
+    expect(blocks[0].type).toBe("text");
+    expect(blocks[1].type).toBe("tool_use");
+
+    // Synthetic tool_result
+    const user = session.history[1];
+    expect(user.role).toBe("user");
+    expect(Array.isArray(user.content)).toBe(true);
+    const results = user.content as Array<{ type: string; tool_use_id: string }>;
+    expect(results[0].type).toBe("tool_result");
+    expect(results[0].tool_use_id).toBe("toolu_123");
+  });
+
+  it("handles empty text with tool_use blocks (tool-only response)", () => {
+    const session: ConversationSession = { history: [], createdAt: Date.now() };
+    const toolBlock: ToolUseBlock = {
+      type: "tool_use",
+      id: "toolu_456",
+      name: "highlight",
+      input: { selector: "#btn" },
+    };
+    appendAssistantMessage(session, "", [toolBlock]);
+
+    // Assistant content should only have tool_use (no empty text block)
+    const blocks = session.history[0].content as Array<{ type: string }>;
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe("tool_use");
   });
 });

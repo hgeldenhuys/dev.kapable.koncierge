@@ -231,33 +231,7 @@ describe("createKonciergeAdapter", () => {
     expect(done.done).toBe(true);
   });
 
-  it("includes X-Session-Token header when sessionToken is provided", async () => {
-    const original = globalThis.fetch;
-    let capturedHeaders: Headers | null = null;
-
-    globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
-      capturedHeaders = new Headers(init?.headers);
-      return new Response(
-        sseStream(['data: {"delta":"ok"}\n\ndata: [DONE]\n\n']),
-        { status: 200, headers: { "Content-Type": "text/event-stream" } },
-      );
-    };
-    savedFetch = original;
-
-    const adapter = createKonciergeAdapter({
-      endpoint: "/test",
-      sessionToken: "my-session-token-abc",
-    });
-
-    const gen = adapter.run(makeRunOptions("hi"));
-    let result = await gen.next();
-    while (!result.done) result = await gen.next();
-
-    expect(capturedHeaders).not.toBeNull();
-    expect(capturedHeaders!.get("X-Session-Token")).toBe("my-session-token-abc");
-  });
-
-  it("omits X-Session-Token header when sessionToken is not provided", async () => {
+  it("never sends X-Session-Token from the client (token is set server-side by BFF)", async () => {
     const original = globalThis.fetch;
     let capturedHeaders: Headers | null = null;
 
@@ -278,6 +252,52 @@ describe("createKonciergeAdapter", () => {
 
     expect(capturedHeaders).not.toBeNull();
     expect(capturedHeaders!.get("X-Session-Token")).toBeNull();
+  });
+
+  it("calls onToolCall when a tool_use SSE event is received", async () => {
+    savedFetch = mockFetch([
+      'data: {"delta":"Let me navigate you."}\n\n',
+      'data: {"tool_use":{"id":"toolu_1","name":"navigate","input":{"route":"/flows"}}}\n\n',
+      "data: [DONE]\n\n",
+    ]);
+
+    const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+    const adapter = createKonciergeAdapter({
+      endpoint: "/test",
+      onToolCall: (tc) => toolCalls.push(tc),
+    });
+    const gen = adapter.run(makeRunOptions("take me to flows"));
+
+    const yields: Array<{ content: Array<{ type: string; text: string }> }> = [];
+    let result = await gen.next();
+    while (!result.done) {
+      yields.push(result.value as never);
+      result = await gen.next();
+    }
+
+    // Tool call should have been dispatched
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0].name).toBe("navigate");
+    expect(toolCalls[0].input).toEqual({ route: "/flows" });
+
+    // Text should still accumulate normally (tool_use events don't add to text)
+    const lastText = yields[yields.length - 1].content[0].text;
+    expect(lastText).toBe("Let me navigate you.");
+  });
+
+  it("handles tool_use events without onToolCall callback", async () => {
+    savedFetch = mockFetch([
+      'data: {"tool_use":{"id":"toolu_2","name":"highlight","input":{"selector":"#btn"}}}\n\n',
+      "data: [DONE]\n\n",
+    ]);
+
+    // No onToolCall callback — should not throw
+    const adapter = createKonciergeAdapter({ endpoint: "/test" });
+    const gen = adapter.run(makeRunOptions("highlight something"));
+    let result = await gen.next();
+    while (!result.done) result = await gen.next();
+    // If we get here without error, the test passes
+    expect(true).toBe(true);
   });
 
   it("extracts text from multi-part user messages", async () => {
