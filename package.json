@@ -1,0 +1,10 @@
+{
+  "name": "@kapable/koncierge",
+  "version": "0.1.0",
+  "description": "Kapable platform onboarding assistant — knowledge distillation + in-console chat agent",
+  "private": true,
+  "scripts": {
+    "distill": "echo 'Run knowledge distillation agents — see PLAN.md Phase 0'",
+    "merge": "echo 'Merge subsystem docs into KAPABLE_KNOWLEDGE_BASE.md'"
+  }
+}
