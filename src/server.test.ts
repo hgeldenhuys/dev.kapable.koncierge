@@ -55,8 +55,15 @@ beforeAll(() => {
             { status: 401, headers: cors },
           );
         }
+
+        // Parse body and echo route context back for testing
+        const body = await req.json().catch(() => ({}));
         return Response.json(
-          { ok: true },
+          {
+            ok: true,
+            received_route: body.route ?? null,
+            received_pageTitle: body.pageTitle ?? null,
+          },
           { status: 200, headers: cors },
         );
       }
@@ -168,5 +175,63 @@ describe("Auth — X-Koncierge-Key validation", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
+  });
+});
+
+// ── Route context injection ──────────────────────────────────
+describe("Route context — included in POST body", () => {
+  it("echoes route and pageTitle when provided", async () => {
+    const res = await fetch(`${base}/v1/koncierge/message`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Koncierge-Key": TEST_SECRET,
+        Origin: "https://console.kapable.dev",
+      },
+      body: JSON.stringify({
+        message: "What is this page?",
+        route: "/projects/abc",
+        pageTitle: "Project ABC",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.received_route).toBe("/projects/abc");
+    expect(body.received_pageTitle).toBe("Project ABC");
+  });
+
+  it("handles missing route context gracefully", async () => {
+    const res = await fetch(`${base}/v1/koncierge/message`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Koncierge-Key": TEST_SECRET,
+        Origin: "https://console.kapable.dev",
+      },
+      body: JSON.stringify({ message: "hello" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.received_route).toBeNull();
+    expect(body.received_pageTitle).toBeNull();
+  });
+
+  it("accepts route without pageTitle", async () => {
+    const res = await fetch(`${base}/v1/koncierge/message`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Koncierge-Key": TEST_SECRET,
+        Origin: "https://console.kapable.dev",
+      },
+      body: JSON.stringify({
+        message: "help",
+        route: "/apps",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.received_route).toBe("/apps");
+    expect(body.received_pageTitle).toBeNull();
   });
 });
