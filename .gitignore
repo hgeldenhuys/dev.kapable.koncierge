@@ -2,3 +2,7 @@ node_modules/
 .env
 *.log
 .DS_Store
+
+# Epic Runner ephemeral config (contains API keys — must never be committed)
+.epic-runner/config.toml
+.epic-runner/stories/
