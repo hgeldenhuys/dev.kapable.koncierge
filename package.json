@@ -3,13 +3,33 @@
   "version": "0.1.0",
   "description": "Kapable platform onboarding assistant — knowledge distillation + in-console chat agent",
   "private": true,
+  "exports": {
+    ".": "./src/server.ts",
+    "./client": "./src/client/index.ts"
+  },
   "scripts": {
     "start": "bun run src/server.ts",
     "dev": "bun --watch run src/server.ts",
+    "test": "bun test",
     "distill": "echo 'Run knowledge distillation agents — see PLAN.md Phase 0'",
     "merge": "echo 'Merge subsystem docs into KAPABLE_KNOWLEDGE_BASE.md'"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-router-dom": ">=6"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true },
+    "react-router-dom": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.1"
   }
 }
