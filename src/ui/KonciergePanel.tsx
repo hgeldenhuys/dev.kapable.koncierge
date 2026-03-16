@@ -9,7 +9,7 @@ import { parseToolCalls, type KonciergeToolCall } from "./tool-calls";
 
 // ─── localStorage persistence ────────────────────────────────────────────────
 
-const STORAGE_KEY = "koncierge-collapsed";
+const STORAGE_KEY = "koncierge:collapsed";
 
 function readCollapsed(fallback: boolean): boolean {
   try {
@@ -181,6 +181,8 @@ const inputStyle: CSSProperties = {
   lineHeight: 1.4,
   maxHeight: 100,
   boxSizing: "border-box",
+  color: "#1e293b",
+  backgroundColor: "#ffffff",
 };
 
 const sendButtonStyle: CSSProperties = {
@@ -335,11 +337,10 @@ export function KonciergePanel({
                       <>
                         <div style={emptyIconStyle} aria-hidden="true">K</div>
                         <div style={emptyHeadingStyle}>
-                          Hi, I'm Koncierge — your Kapable guide
+                          Hi, I'm Koncierge — ask me anything about the Kapable platform
                         </div>
                         <div>
-                          Ask me anything about the platform, or say{" "}
-                          <strong>"show me around"</strong> to get started.
+                          Say <strong>"show me around"</strong> to get started.
                         </div>
                       </>
                     )}
