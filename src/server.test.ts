@@ -55,8 +55,13 @@ beforeAll(() => {
             { status: 401, headers: cors },
           );
         }
+
+        // Parse and echo route context for testing
+        let body: Record<string, unknown> = {};
+        try { body = await req.json(); } catch { /* ignore */ }
+
         return Response.json(
-          { ok: true },
+          { ok: true, route: body.route, pageTitle: body.pageTitle },
           { status: 200, headers: cors },
         );
       }
@@ -168,5 +173,88 @@ describe("Auth — X-Koncierge-Key validation", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
+  });
+});
+
+// ── Route-aware context — POST body includes route and pageTitle ──
+describe("Route context — POST body contains pathname and page title", () => {
+  it("echoes /flows route and 'AI Flows' pageTitle from request body", async () => {
+    const res = await fetch(`${base}/v1/koncierge/message`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Koncierge-Key": TEST_SECRET,
+        Origin: "https://console.kapable.dev",
+      },
+      body: JSON.stringify({
+        message: "what is this page?",
+        route: "/flows",
+        pageTitle: "AI Flows",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.route).toBe("/flows");
+    expect(body.pageTitle).toBe("AI Flows");
+  });
+
+  it("echoes /data-api route and 'Data API' pageTitle from request body", async () => {
+    const res = await fetch(`${base}/v1/koncierge/message`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Koncierge-Key": TEST_SECRET,
+        Origin: "https://console.kapable.dev",
+      },
+      body: JSON.stringify({
+        message: "what is this page?",
+        route: "/data-api",
+        pageTitle: "Data API",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.route).toBe("/data-api");
+    expect(body.pageTitle).toBe("Data API");
+  });
+
+  it("two distinct pages produce different route context", async () => {
+    // Page 1: /flows
+    const res1 = await fetch(`${base}/v1/koncierge/message`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Koncierge-Key": TEST_SECRET,
+        Origin: "https://console.kapable.dev",
+      },
+      body: JSON.stringify({
+        message: "what am I looking at?",
+        route: "/flows",
+        pageTitle: "AI Flows",
+      }),
+    });
+    const body1 = await res1.json();
+
+    // Page 2: /data-api
+    const res2 = await fetch(`${base}/v1/koncierge/message`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Koncierge-Key": TEST_SECRET,
+        Origin: "https://console.kapable.dev",
+      },
+      body: JSON.stringify({
+        message: "what am I looking at?",
+        route: "/data-api",
+        pageTitle: "Data API",
+      }),
+    });
+    const body2 = await res2.json();
+
+    // Different routes produce different context
+    expect(body1.route).toBe("/flows");
+    expect(body2.route).toBe("/data-api");
+    expect(body1.route).not.toBe(body2.route);
+    expect(body1.pageTitle).not.toBe(body2.pageTitle);
   });
 });

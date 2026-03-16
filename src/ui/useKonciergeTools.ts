@@ -68,7 +68,12 @@ function injectStyles(): void {
 // ─── DOM helpers ──────────────────────────────────────────────────────────────
 
 function highlightElement(selector: string, durationMs: number): void {
-  const el = document.querySelector(selector);
+  let el: Element | null;
+  try {
+    el = document.querySelector(selector);
+  } catch {
+    return; // Invalid selector — silently ignore
+  }
   if (!el) return;
 
   injectStyles();
@@ -81,7 +86,12 @@ function highlightElement(selector: string, durationMs: number): void {
 }
 
 function showTooltip(selector: string, text: string, durationMs: number): void {
-  const el = document.querySelector(selector);
+  let el: Element | null;
+  try {
+    el = document.querySelector(selector);
+  } catch {
+    return; // Invalid selector — silently ignore
+  }
   if (!el) return;
 
   injectStyles();
@@ -150,30 +160,35 @@ export function useKonciergeTools(
   onNotifyRef.current = config.onNotify;
 
   const executeTool = useCallback((tc: KonciergeToolCall) => {
-    switch (tc.tool) {
-      case "navigate":
-        navigateRef.current(tc.args.route);
-        onNotifyRef.current?.(`Navigating to ${labelForRoute(tc.args.route)}...`);
-        break;
+    try {
+      switch (tc.tool) {
+        case "navigate":
+          navigateRef.current(tc.args.route);
+          onNotifyRef.current?.(`Navigating to ${labelForRoute(tc.args.route)}...`);
+          break;
 
-      case "highlight":
-        highlightElement(
-          tc.args.selector,
-          tc.args.durationMs ?? DEFAULT_HIGHLIGHT_MS,
-        );
-        break;
+        case "highlight":
+          highlightElement(
+            tc.args.selector,
+            tc.args.durationMs ?? DEFAULT_HIGHLIGHT_MS,
+          );
+          break;
 
-      case "tooltip":
-        showTooltip(
-          tc.args.selector,
-          tc.args.text,
-          tc.args.durationMs ?? DEFAULT_HIGHLIGHT_MS,
-        );
-        break;
+        case "tooltip":
+          showTooltip(
+            tc.args.selector,
+            tc.args.text,
+            tc.args.durationMs ?? DEFAULT_HIGHLIGHT_MS,
+          );
+          break;
 
-      case "showSection":
-        highlightElement(tc.args.selector, DEFAULT_HIGHLIGHT_MS);
-        break;
+        case "showSection":
+          highlightElement(tc.args.selector, DEFAULT_HIGHLIGHT_MS);
+          break;
+      }
+    } catch {
+      // Silently swallow tool execution errors (bad selector, missing element, etc.)
+      // so the chat panel never crashes from a failed tool call.
     }
   }, []);
 

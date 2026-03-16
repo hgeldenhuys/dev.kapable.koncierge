@@ -44,7 +44,7 @@ Output per agent: structured markdown with concepts, workflows, common tasks, go
 
 **Frontend (in dev.kapable.console):**
 - Chat panel component (sidebar or overlay, accessible from every route)
-- Route context injection — tell the agent what page the user is on
+- ~~Route context injection — tell the agent what page the user is on~~ ✅ (adapter sends route+pageTitle per-message, server prepends to Claude prompt, logged per-request)
 - Action rendering — navigate user, highlight elements, show tooltips
 - SSE streaming for real-time responses
 - Reference: GrowthFin onboarding widgets pattern (../realtime-db/)
