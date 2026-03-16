@@ -160,19 +160,19 @@ describe("extractKonciergeToken — edge cases", () => {
 
 describe("extractKonciergeTokenFromEnv", () => {
   it("returns null when KONCIERGE_SECRET is not set", () => {
-    const orig = process.env.KONCIERGE_SECRET;
-    delete process.env.KONCIERGE_SECRET;
+    const orig = process.env['KONCIERGE_SECRET'];
+    delete process.env['KONCIERGE_SECRET'];
 
     const identity: AuthIdentity = { authMode: "session", userId: "user-1" };
     expect(extractKonciergeTokenFromEnv(identity)).toBeNull();
 
-    if (orig !== undefined) process.env.KONCIERGE_SECRET = orig;
-    else delete process.env.KONCIERGE_SECRET;
+    if (orig !== undefined) process.env['KONCIERGE_SECRET'] = orig;
+    else delete process.env['KONCIERGE_SECRET'];
   });
 
   it("returns a token when KONCIERGE_SECRET is set", () => {
-    const orig = process.env.KONCIERGE_SECRET;
-    process.env.KONCIERGE_SECRET = "env-test-secret";
+    const orig = process.env['KONCIERGE_SECRET'];
+    process.env['KONCIERGE_SECRET'] = "env-test-secret";
 
     const identity: AuthIdentity = { authMode: "session", userId: "user-1" };
     const token = extractKonciergeTokenFromEnv(identity);
@@ -183,7 +183,7 @@ describe("extractKonciergeTokenFromEnv", () => {
     const expected = extractKonciergeToken(identity, "env-test-secret");
     expect(token).toBe(expected);
 
-    if (orig !== undefined) process.env.KONCIERGE_SECRET = orig;
-    else delete process.env.KONCIERGE_SECRET;
+    if (orig !== undefined) process.env['KONCIERGE_SECRET'] = orig;
+    else delete process.env['KONCIERGE_SECRET'];
   });
 });

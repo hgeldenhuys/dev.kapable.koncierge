@@ -41,7 +41,7 @@ export function generateSessionToken(userId: string, secret: string): string {
  * @returns 64-char hex token, or null if KONCIERGE_SECRET is not set
  */
 export function generateSessionTokenFromEnv(userId: string): string | null {
-  const secret = process.env.KONCIERGE_SECRET;
+  const secret = process.env['KONCIERGE_SECRET'];
   if (!secret) return null;
   return generateSessionToken(userId, secret);
 }

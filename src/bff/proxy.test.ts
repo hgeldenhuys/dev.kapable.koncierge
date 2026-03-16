@@ -207,25 +207,25 @@ describe("BFF proxy — unreachable backend", () => {
 // ── configFromEnv ──────────────────────────────────────────────
 describe("configFromEnv", () => {
   it("returns null when KONCIERGE_URL is missing", () => {
-    const origUrl = process.env.KONCIERGE_URL;
-    const origSecret = process.env.KONCIERGE_SECRET;
-    delete process.env.KONCIERGE_URL;
-    process.env.KONCIERGE_SECRET = "secret";
+    const origUrl = process.env['KONCIERGE_URL'];
+    const origSecret = process.env['KONCIERGE_SECRET'];
+    delete process.env['KONCIERGE_URL'];
+    process.env['KONCIERGE_SECRET'] = "secret";
 
     expect(configFromEnv()).toBeNull();
 
     // Restore
-    if (origUrl !== undefined) process.env.KONCIERGE_URL = origUrl;
-    else delete process.env.KONCIERGE_URL;
-    if (origSecret !== undefined) process.env.KONCIERGE_SECRET = origSecret;
-    else delete process.env.KONCIERGE_SECRET;
+    if (origUrl !== undefined) process.env['KONCIERGE_URL'] = origUrl;
+    else delete process.env['KONCIERGE_URL'];
+    if (origSecret !== undefined) process.env['KONCIERGE_SECRET'] = origSecret;
+    else delete process.env['KONCIERGE_SECRET'];
   });
 
   it("returns config when both vars are set", () => {
-    const origUrl = process.env.KONCIERGE_URL;
-    const origSecret = process.env.KONCIERGE_SECRET;
-    process.env.KONCIERGE_URL = "http://koncierge:3101/";
-    process.env.KONCIERGE_SECRET = "my-secret";
+    const origUrl = process.env['KONCIERGE_URL'];
+    const origSecret = process.env['KONCIERGE_SECRET'];
+    process.env['KONCIERGE_URL'] = "http://koncierge:3101/";
+    process.env['KONCIERGE_SECRET'] = "my-secret";
 
     const config = configFromEnv();
     expect(config).not.toBeNull();
@@ -233,10 +233,10 @@ describe("configFromEnv", () => {
     expect(config!.konciergeSecret).toBe("my-secret");
 
     // Restore
-    if (origUrl !== undefined) process.env.KONCIERGE_URL = origUrl;
-    else delete process.env.KONCIERGE_URL;
-    if (origSecret !== undefined) process.env.KONCIERGE_SECRET = origSecret;
-    else delete process.env.KONCIERGE_SECRET;
+    if (origUrl !== undefined) process.env['KONCIERGE_URL'] = origUrl;
+    else delete process.env['KONCIERGE_URL'];
+    if (origSecret !== undefined) process.env['KONCIERGE_SECRET'] = origSecret;
+    else delete process.env['KONCIERGE_SECRET'];
   });
 });
 

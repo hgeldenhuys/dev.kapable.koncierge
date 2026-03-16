@@ -15,7 +15,7 @@ import { extractKonciergeToken, type AuthIdentity } from "./extract-user-token";
  */
 
 const TEST_SECRET = "isolation-test-secret";
-const MOCK_PORT = 39_301;
+const MOCK_PORT = 39_501;
 const MOCK_URL = `http://localhost:${MOCK_PORT}`;
 
 // In-memory "conversation store" in the mock backend

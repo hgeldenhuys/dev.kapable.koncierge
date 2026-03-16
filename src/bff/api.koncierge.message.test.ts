@@ -230,4 +230,31 @@ describe("Route handler — auth failure", () => {
     // extractKonciergeToken returns null → handleKonciergeProxy returns 401
     expect(res.status).toBe(401);
   });
+
+  it("does NOT call the Koncierge backend when auth fails (unauthenticated requests are rejected at the BFF)", async () => {
+    // Track whether the upstream mock receives any request
+    let upstreamCalled = false;
+    const trackingPort = 39_601;
+    const trackingMock = Bun.serve({
+      port: trackingPort,
+      fetch() {
+        upstreamCalled = true;
+        return Response.json({ error: "should not be called" }, { status: 500 });
+      },
+    });
+
+    try {
+      const handler = createKonciergeHandler({
+        requireAuth: () => { throw new Error("No cookie"); },
+        secret: TEST_SECRET,
+        proxyConfig: { konciergeUrl: `http://localhost:${trackingPort}`, konciergeSecret: TEST_SECRET },
+      });
+
+      const res = await handler(makeRequest("hello"));
+      expect(res.status).toBe(401);
+      expect(upstreamCalled).toBe(false);
+    } finally {
+      trackingMock.stop();
+    }
+  });
 });

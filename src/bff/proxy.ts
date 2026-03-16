@@ -20,8 +20,8 @@ export interface BffProxyConfig {
  * Returns null if either is missing.
  */
 export function configFromEnv(): BffProxyConfig | null {
-  const konciergeUrl = process.env.KONCIERGE_URL;
-  const konciergeSecret = process.env.KONCIERGE_SECRET;
+  const konciergeUrl = process.env['KONCIERGE_URL'];
+  const konciergeSecret = process.env['KONCIERGE_SECRET'];
   if (!konciergeUrl || !konciergeSecret) return null;
   return { konciergeUrl: konciergeUrl.replace(/\/+$/, ""), konciergeSecret };
 }

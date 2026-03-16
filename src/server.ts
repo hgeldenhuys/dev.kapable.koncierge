@@ -9,7 +9,7 @@ import {
 } from "./session";
 
 const PORT = Number(process.env.PORT) || 3101;
-const KONCIERGE_SECRET = process.env.KONCIERGE_SECRET ?? "";
+const KONCIERGE_SECRET = process.env['KONCIERGE_SECRET'] ?? "";
 
 /** Origins allowed to call the Koncierge API */
 const ALLOWED_ORIGINS = new Set([

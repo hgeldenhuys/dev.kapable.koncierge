@@ -39,18 +39,18 @@ describe("generateSessionToken", () => {
 
 describe("generateSessionTokenFromEnv", () => {
   it("returns null when KONCIERGE_SECRET is not set", () => {
-    const orig = process.env.KONCIERGE_SECRET;
-    delete process.env.KONCIERGE_SECRET;
+    const orig = process.env['KONCIERGE_SECRET'];
+    delete process.env['KONCIERGE_SECRET'];
 
     expect(generateSessionTokenFromEnv("user-123")).toBeNull();
 
-    if (orig !== undefined) process.env.KONCIERGE_SECRET = orig;
-    else delete process.env.KONCIERGE_SECRET;
+    if (orig !== undefined) process.env['KONCIERGE_SECRET'] = orig;
+    else delete process.env['KONCIERGE_SECRET'];
   });
 
   it("returns a token when KONCIERGE_SECRET is set", () => {
-    const orig = process.env.KONCIERGE_SECRET;
-    process.env.KONCIERGE_SECRET = "env-secret-xyz";
+    const orig = process.env['KONCIERGE_SECRET'];
+    process.env['KONCIERGE_SECRET'] = "env-secret-xyz";
 
     const token = generateSessionTokenFromEnv("user-456");
     expect(token).not.toBeNull();
@@ -60,7 +60,7 @@ describe("generateSessionTokenFromEnv", () => {
     const expected = generateSessionToken("user-456", "env-secret-xyz");
     expect(token).toBe(expected);
 
-    if (orig !== undefined) process.env.KONCIERGE_SECRET = orig;
-    else delete process.env.KONCIERGE_SECRET;
+    if (orig !== undefined) process.env['KONCIERGE_SECRET'] = orig;
+    else delete process.env['KONCIERGE_SECRET'];
   });
 });
