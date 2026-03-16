@@ -4,7 +4,7 @@ import { streamSSE } from "hono/streaming";
 import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { jwtVerify, createRemoteJWKSet, importSPKI } from "jose";
+import { jwtVerify, importSPKI } from "jose";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -121,15 +121,40 @@ app.use("/v1/*", async (c, next) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /v1/koncierge/message — streaming SSE
+// POST /v1/koncierge/message — streaming SSE (authenticated, direct clients)
+// POST /message — streaming SSE (unauthenticated, called by console BFF)
 // ---------------------------------------------------------------------------
+interface RouteContext {
+  path?: string;
+  role?: string;
+  orgName?: string;
+}
+
 interface MessageRequest {
   message: string;
-  route_context?: string;
+  session_id?: string;
+  route_context?: RouteContext | string;
   conversation_history?: Array<{ role: "user" | "assistant"; content: string }>;
 }
 
-app.post("/v1/koncierge/message", async (c) => {
+/**
+ * Format route context into a readable string for the user message.
+ * Accepts both the legacy string format and the structured object from the BFF.
+ */
+function formatRouteContext(ctx: RouteContext | string | undefined): string {
+  if (!ctx) return "";
+  if (typeof ctx === "string") return ctx;
+  const parts: string[] = [];
+  if (ctx.path) parts.push(`path: ${ctx.path}`);
+  if (ctx.role) parts.push(`role: ${ctx.role}`);
+  if (ctx.orgName) parts.push(`org: ${ctx.orgName}`);
+  return parts.join(", ");
+}
+
+/**
+ * Shared handler for the message endpoint — used by both /message and /v1/koncierge/message.
+ */
+async function handleMessage(c: Parameters<Parameters<typeof app.post>[1]>[0]) {
   const body = await c.req.json<MessageRequest>();
 
   if (!body.message || typeof body.message !== "string") {
@@ -146,8 +171,9 @@ app.post("/v1/koncierge/message", async (c) => {
   }
 
   // Inject route context into the user message
-  const userContent = body.route_context
-    ? `[Current page: ${body.route_context}]\n\n${body.message}`
+  const routeStr = formatRouteContext(body.route_context);
+  const userContent = routeStr
+    ? `[Current page: ${routeStr}]\n\n${body.message}`
     : body.message;
 
   messages.push({ role: "user", content: userContent });
@@ -167,22 +193,19 @@ app.post("/v1/koncierge/message", async (c) => {
           const delta = event.delta;
           if ("text" in delta) {
             await stream.writeSSE({
-              event: "token",
-              data: JSON.stringify({ type: "token", content: delta.text }),
+              data: JSON.stringify({ type: "TextDelta", text: delta.text }),
             });
           }
         } else if (event.type === "message_start") {
           await stream.writeSSE({
-            event: "message_start",
             data: JSON.stringify({
-              type: "message_start",
+              type: "MessageStart",
               id: event.message.id,
             }),
           });
         } else if (event.type === "message_stop") {
           await stream.writeSSE({
-            event: "done",
-            data: JSON.stringify({ type: "done" }),
+            data: JSON.stringify({ type: "Done" }),
           });
         }
       }
@@ -191,12 +214,17 @@ app.post("/v1/koncierge/message", async (c) => {
         err instanceof Error ? err.message : "Unknown error";
       console.error("[koncierge] Streaming error:", errorMessage);
       await stream.writeSSE({
-        event: "error",
-        data: JSON.stringify({ type: "error", message: errorMessage }),
+        data: JSON.stringify({ type: "Error", error: errorMessage }),
       });
     }
   });
-});
+}
+
+// Unauthenticated — called by the console BFF (which already verified the session)
+app.post("/message", handleMessage);
+
+// Authenticated — for direct API clients with JWT
+app.post("/v1/koncierge/message", handleMessage);
 
 // ---------------------------------------------------------------------------
 // Start server
