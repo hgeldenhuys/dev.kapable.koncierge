@@ -27,21 +27,23 @@ If previous iterations found "panel not integrated" or "panel not wired" and you
 
 These tests check the DEPLOYED, RUNNING app. File inspection alone is NOT sufficient.
 
-### Backend health
+### Backend health (via SSH to production server)
 ```bash
-curl -sf http://localhost:3101/health 2>&1
+ssh kapable-prod "curl -sf http://localhost:3101/health" 2>&1
 ```
-If this returns `{"status":"ok"}`, the Koncierge backend IS running.
+If this returns `{"status":"ok"}`, the Koncierge backend IS running on production.
 
-### End-to-end chat test
+### End-to-end chat test (via SSH to production server)
 ```bash
-curl -sf -X POST http://localhost:3101/v1/koncierge/message \
+ssh kapable-prod "curl -sf -X POST http://localhost:3101/v1/koncierge/message \
   -H 'Content-Type: application/json' \
   -H 'X-Koncierge-Key: 173724d18620c926b8ae7dfea9f34cd9fb912cd26bb1a8b7aa233580c973d628' \
   -H 'X-Session-Token: adversary-test' \
-  -d '{"message": "What is Kapable?"}' 2>&1 | head -5
+  -d '{\"message\": \"What is Kapable?\"}'" 2>&1 | head -5
 ```
 If this returns streaming `data:` events with text, the chat IS working end-to-end.
+
+**NOTE:** The backend runs on the production server (kapable-prod), NOT locally. Always use `ssh kapable-prod` to test it.
 
 ### Console build check
 ```bash
