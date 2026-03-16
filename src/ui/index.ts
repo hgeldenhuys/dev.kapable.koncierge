@@ -37,3 +37,6 @@ export type {
 
 export { useKonciergeTools } from "./useKonciergeTools";
 export type { UseKonciergeToolsConfig, UseKonciergeToolsReturn } from "./useKonciergeTools";
+
+export { KonciergeWithTools } from "./KonciergeWithTools";
+export type { KonciergeWithToolsProps } from "./KonciergeWithTools";

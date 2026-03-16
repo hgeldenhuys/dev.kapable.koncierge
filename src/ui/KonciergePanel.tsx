@@ -36,7 +36,7 @@ const panelContainerStyle: CSSProperties = {
   position: "fixed",
   bottom: 16,
   right: 16,
-  zIndex: 9999,
+  zIndex: 40,
   display: "flex",
   flexDirection: "column",
   alignItems: "flex-end",
@@ -44,8 +44,7 @@ const panelContainerStyle: CSSProperties = {
 };
 
 const panelStyle: CSSProperties = {
-  width: 380,
-  maxWidth: "calc(100vw - 32px)",
+  width: "min(380px, calc(100vw - 32px))",
   maxHeight: "70vh",
   display: "flex",
   flexDirection: "column",
@@ -101,6 +100,27 @@ const emptyStyle: CSSProperties = {
   color: "#94a3b8",
   fontSize: 13,
   padding: "32px 16px",
+};
+
+const emptyIconStyle: CSSProperties = {
+  width: 40,
+  height: 40,
+  borderRadius: "50%",
+  backgroundColor: "#3b82f6",
+  color: "#ffffff",
+  fontSize: 18,
+  fontWeight: 700,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  margin: "0 auto 12px",
+};
+
+const emptyHeadingStyle: CSSProperties = {
+  fontSize: 15,
+  fontWeight: 600,
+  color: "#1e293b",
+  marginBottom: 8,
 };
 
 const userMessageStyle: CSSProperties = {
@@ -311,7 +331,18 @@ export function KonciergePanel({
               <ThreadPrimitive.Viewport style={viewportStyle}>
                 <ThreadPrimitive.Empty>
                   <div style={emptyStyle}>
-                    {emptyContent ?? "Ask me anything about Kapable!"}
+                    {emptyContent ?? (
+                      <>
+                        <div style={emptyIconStyle} aria-hidden="true">K</div>
+                        <div style={emptyHeadingStyle}>
+                          Hi, I'm Koncierge — your Kapable guide
+                        </div>
+                        <div>
+                          Ask me anything about the platform, or say{" "}
+                          <strong>"show me around"</strong> to get started.
+                        </div>
+                      </>
+                    )}
                   </div>
                 </ThreadPrimitive.Empty>
 
