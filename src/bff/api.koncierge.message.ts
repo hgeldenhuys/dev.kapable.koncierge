@@ -83,7 +83,7 @@ export function createKonciergeHandler(
 export function createKonciergeRoute(
   requireAuth: RequireAuth,
 ): (req: Request) => Promise<Response> {
-  const secret = process.env.KONCIERGE_SECRET ?? "";
+  const secret = process.env["KONCIERGE_SECRET"] ?? "";
   const proxyConfig = configFromEnv();
 
   return createKonciergeHandler({

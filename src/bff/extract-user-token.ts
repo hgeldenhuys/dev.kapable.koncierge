@@ -80,7 +80,7 @@ export function extractKonciergeToken(
 export function extractKonciergeTokenFromEnv(
   identity: AuthIdentity,
 ): string | null {
-  const secret = process.env.KONCIERGE_SECRET;
+  const secret = process.env["KONCIERGE_SECRET"];
   if (!secret) return null;
   return extractKonciergeToken(identity, secret);
 }
