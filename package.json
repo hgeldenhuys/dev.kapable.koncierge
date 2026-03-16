@@ -4,7 +4,15 @@
   "description": "Kapable platform onboarding assistant — knowledge distillation + in-console chat agent",
   "private": true,
   "scripts": {
+    "dev": "bun run --hot src/server.ts",
+    "start": "bun run src/server.ts",
+    "test": "bun test",
     "distill": "echo 'Run knowledge distillation agents — see PLAN.md Phase 0'",
     "merge": "echo 'Merge subsystem docs into KAPABLE_KNOWLEDGE_BASE.md'"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "hono": "^4.12.8",
+    "jose": "^6.2.1"
   }
 }
