@@ -161,6 +161,8 @@ const inputStyle: CSSProperties = {
   lineHeight: 1.4,
   maxHeight: 100,
   boxSizing: "border-box",
+  color: "#1e293b",
+  backgroundColor: "#ffffff",
 };
 
 const sendButtonStyle: CSSProperties = {
