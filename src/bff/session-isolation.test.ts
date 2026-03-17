@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { handleKonciergeProxy, type BffProxyConfig } from "./proxy";
 import { extractKonciergeToken, type AuthIdentity } from "./extract-user-token";
+import { getSession } from "../session";
 
 /**
  * Integration test: two different authenticated users get isolated
@@ -202,5 +203,111 @@ describe("Session isolation — consistency across reloads", () => {
     const tokenOnLoad2 = extractKonciergeToken(identity, TEST_SECRET);
 
     expect(tokenOnLoad1).toBe(tokenOnLoad2);
+  });
+});
+
+// ── Adversarial token-tampering — forged tokens cannot access real sessions
+
+/**
+ * Flip the last hex character of a token to produce a forged variant.
+ * e.g. "abc0" → "abc1", "abcf" → "abce"
+ */
+function forgeToken(realToken: string): string {
+  const lastChar = realToken[realToken.length - 1];
+  const flipped = lastChar === "0" ? "1" : "0";
+  return realToken.slice(0, -1) + flipped;
+}
+
+describe("Session isolation — adversarial token", () => {
+  it("forged token (off-by-one from Alice) does NOT see Alice's messages via BFF proxy", async () => {
+    // Task 1: Derive Alice's real token
+    const aliceToken = extractKonciergeToken(
+      { authMode: "session", userId: "alice-adversarial-001", orgId: "org-adv" },
+      TEST_SECRET,
+    )!;
+    expect(aliceToken).toHaveLength(64);
+
+    // Construct a forged token by flipping the last hex character
+    const forgedToken = forgeToken(aliceToken);
+    expect(forgedToken).not.toBe(aliceToken);
+    expect(forgedToken).toHaveLength(64);
+
+    // Task 2: Alice sends a message — establishes her history in the mock backend
+    const aliceRes = await handleKonciergeProxy(
+      makeRequest("Hello from Alice — secret onboarding data"),
+      getConfig(),
+      aliceToken,
+    );
+    expect(aliceRes.status).toBe(200);
+    const aliceText = await aliceRes.text();
+    expect(aliceText).toContain("Hello from Alice");
+
+    // Task 3: Attacker probes with the forged token
+    const forgedRes = await handleKonciergeProxy(
+      makeRequest("probe from attacker"),
+      getConfig(),
+      forgedToken,
+    );
+    expect(forgedRes.status).toBe(200);
+    const forgedText = await forgedRes.text();
+
+    // Task 4: The forged-token response must NOT contain Alice's messages
+    expect(forgedText).not.toContain("Hello from Alice");
+    expect(forgedText).not.toContain("secret onboarding data");
+    // The forged response only has the attacker's own probe message
+    expect(forgedText).toContain("probe from attacker");
+  });
+
+  it("truncated token gets a fresh session, not Alice's", async () => {
+    const aliceToken = extractKonciergeToken(
+      { authMode: "session", userId: "alice-truncate-001", orgId: "org-trunc" },
+      TEST_SECRET,
+    )!;
+
+    // Alice establishes history
+    const aliceRes = await handleKonciergeProxy(
+      makeRequest("Alice truncation test message"),
+      getConfig(),
+      aliceToken,
+    );
+    expect(aliceRes.status).toBe(200);
+
+    // Attacker uses a truncated version of Alice's token (first 32 chars)
+    const truncatedToken = aliceToken.slice(0, 32);
+    expect(truncatedToken).not.toBe(aliceToken);
+
+    const truncRes = await handleKonciergeProxy(
+      makeRequest("truncated probe"),
+      getConfig(),
+      truncatedToken,
+    );
+    expect(truncRes.status).toBe(200);
+    const truncText = await truncRes.text();
+
+    // Must NOT contain Alice's message
+    expect(truncText).not.toContain("Alice truncation test message");
+    expect(truncText).toContain("truncated probe");
+  });
+
+  it("server-level getSession(forgedToken) returns empty history, not Alice's", () => {
+    // Use the server-level session store directly (not the mock HTTP backend)
+    const aliceServerToken = "adversarial-alice-server-token-real";
+    const forgedServerToken = forgeToken(aliceServerToken);
+
+    // Alice establishes a session with history
+    const aliceSession = getSession(aliceServerToken);
+    aliceSession.history.push({ role: "user", content: "Alice server-side secret" });
+    aliceSession.history.push({ role: "assistant", content: "Welcome Alice!" });
+    expect(aliceSession.history.length).toBe(2);
+
+    // Attacker tries the forged token — must get a FRESH session
+    const forgedSession = getSession(forgedServerToken);
+    expect(forgedSession).not.toBe(aliceSession);
+    expect(forgedSession.history.length).toBe(0);
+    expect(forgedSession.history).not.toBe(aliceSession.history);
+
+    // Alice's session is unaffected
+    expect(aliceSession.history.length).toBe(2);
+    expect(JSON.stringify(aliceSession.history)).toContain("Alice server-side secret");
   });
 });
