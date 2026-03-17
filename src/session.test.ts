@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { buildUserMessage, appendAssistantMessage, KONCIERGE_TOOLS, type RouteContext, type ConversationSession } from "./session";
-import type { ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
+import type { MessageParam, ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
 
 describe("smoke test — route context reaches Claude prompt (simulated /flows navigation)", () => {
   it("adapter → proxy body → buildUserMessage produces context-prefixed prompt for /flows", async () => {
@@ -179,5 +179,294 @@ describe("appendAssistantMessage", () => {
     const blocks = session.history[0].content as Array<{ type: string }>;
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe("tool_use");
+  });
+});
+
+// ─── Multi-turn conversation history validation ───────────────────────────────
+// These tests simulate what chatStream + appendAssistantMessage do across
+// multiple turns, including the tool_use merge scenario that caused crashes.
+
+/**
+ * Simulate what chatStream does: push user message to history.
+ * If the last message is a user message with array content (tool_results),
+ * merge the new text into it. Otherwise, push a new user message.
+ * Returns a rollback function.
+ */
+function simulateChatStreamPush(
+  history: MessageParam[],
+  userText: string,
+): { rollback: () => void } {
+  const historyLenBefore = history.length;
+  const lastMsg = history[history.length - 1];
+  let originalLastContent: MessageParam["content"] | undefined;
+
+  if (lastMsg?.role === "user" && Array.isArray(lastMsg.content)) {
+    originalLastContent = [...lastMsg.content] as MessageParam["content"];
+    (lastMsg.content as Array<unknown>).push({ type: "text", text: userText });
+  } else {
+    history.push({ role: "user", content: userText });
+  }
+
+  const rollback = () => {
+    if (originalLastContent !== undefined) {
+      lastMsg.content = originalLastContent;
+    } else {
+      history.length = historyLenBefore;
+    }
+  };
+
+  return { rollback };
+}
+
+/**
+ * Validate that conversation history alternates user/assistant roles.
+ * The Anthropic API requires this.
+ */
+function validateHistory(history: MessageParam[]): { valid: boolean; error?: string } {
+  for (let i = 1; i < history.length; i++) {
+    if (history[i].role === history[i - 1].role) {
+      return {
+        valid: false,
+        error: `Consecutive ${history[i].role} messages at indices ${i - 1} and ${i}`,
+      };
+    }
+  }
+  return { valid: true };
+}
+
+describe("multi-turn conversation history (tool_use scenarios)", () => {
+  it("3-turn text-only conversation stays valid", () => {
+    const session: ConversationSession = { history: [], createdAt: Date.now() };
+
+    // Turn 1
+    simulateChatStreamPush(session.history, "Hello");
+    appendAssistantMessage(session, "Hi there!");
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Turn 2
+    simulateChatStreamPush(session.history, "What is Kapable?");
+    appendAssistantMessage(session, "Kapable is a BaaS platform.");
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Turn 3
+    simulateChatStreamPush(session.history, "Thanks!");
+    appendAssistantMessage(session, "You're welcome!");
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Should have 6 messages (3 user + 3 assistant)
+    expect(session.history).toHaveLength(6);
+  });
+
+  it("tool_use response followed by text message stays valid", () => {
+    const session: ConversationSession = { history: [], createdAt: Date.now() };
+
+    // Turn 1: text only
+    simulateChatStreamPush(session.history, "Show me the projects page");
+    // Claude responds with tool_use (navigate)
+    appendAssistantMessage(session, "", [{
+      type: "tool_use",
+      id: "toolu_001",
+      name: "navigate",
+      input: { route: "/projects" },
+    }]);
+
+    // After tool_use: history = [user, assistant(tool_use), user(tool_result)]
+    expect(session.history).toHaveLength(3);
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Turn 2: user sends follow-up — this MERGES into the tool_result user message
+    simulateChatStreamPush(session.history, "What can I do here?");
+    // The last message should still be user (with tool_result + text merged)
+    expect(session.history).toHaveLength(3); // NOT 4
+    const lastUser = session.history[2];
+    expect(lastUser.role).toBe("user");
+    expect(Array.isArray(lastUser.content)).toBe(true);
+    const blocks = lastUser.content as Array<{ type: string }>;
+    expect(blocks).toHaveLength(2); // tool_result + text
+    expect(blocks[0].type).toBe("tool_result");
+    expect(blocks[1].type).toBe("text");
+
+    // History is still valid (alternating roles)
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Claude responds with text
+    appendAssistantMessage(session, "Here you can manage your projects.");
+    expect(session.history).toHaveLength(4);
+    expect(validateHistory(session.history).valid).toBe(true);
+  });
+
+  it("two consecutive tool_use turns stay valid", () => {
+    const session: ConversationSession = { history: [], createdAt: Date.now() };
+
+    // Turn 1: user asks, Claude navigates
+    simulateChatStreamPush(session.history, "Show me flows");
+    appendAssistantMessage(session, "", [{
+      type: "tool_use",
+      id: "toolu_A",
+      name: "navigate",
+      input: { route: "/flows" },
+    }]);
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Turn 2: user asks again, Claude highlights something
+    simulateChatStreamPush(session.history, "Where is the create button?");
+    appendAssistantMessage(session, "Here it is!", [{
+      type: "tool_use",
+      id: "toolu_B",
+      name: "highlight",
+      input: { selector: "#create-flow-btn" },
+    }]);
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Turn 3: user asks text question
+    simulateChatStreamPush(session.history, "What does it do?");
+    appendAssistantMessage(session, "It creates a new AI flow.");
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Verify no duplicate tool_use IDs in the full history
+    const historyStr = JSON.stringify(session.history);
+    const toolACount = (historyStr.match(/toolu_A/g) || []).length;
+    const toolBCount = (historyStr.match(/toolu_B/g) || []).length;
+    // Each tool_use ID appears exactly twice: once in assistant (tool_use) and once in user (tool_result)
+    expect(toolACount).toBe(2);
+    expect(toolBCount).toBe(2);
+  });
+
+  it("rollback after error preserves valid history for next turn", () => {
+    const session: ConversationSession = { history: [], createdAt: Date.now() };
+
+    // Turn 1: successful
+    simulateChatStreamPush(session.history, "Hello");
+    appendAssistantMessage(session, "Hi!");
+    expect(session.history).toHaveLength(2);
+
+    // Turn 2: API error — rollback the user message
+    const { rollback } = simulateChatStreamPush(session.history, "This will fail");
+    expect(session.history).toHaveLength(3); // user message was pushed
+    rollback();
+    expect(session.history).toHaveLength(2); // rolled back to 2
+
+    // History is still valid
+    expect(validateHistory(session.history).valid).toBe(true);
+    expect(session.history[1].role).toBe("assistant");
+
+    // Turn 3: retry succeeds
+    simulateChatStreamPush(session.history, "Try again");
+    appendAssistantMessage(session, "Success!");
+    expect(session.history).toHaveLength(4);
+    expect(validateHistory(session.history).valid).toBe(true);
+  });
+
+  it("rollback after error when last message was tool_result", () => {
+    const session: ConversationSession = { history: [], createdAt: Date.now() };
+
+    // Turn 1: tool_use response
+    simulateChatStreamPush(session.history, "Navigate to projects");
+    appendAssistantMessage(session, "", [{
+      type: "tool_use",
+      id: "toolu_X",
+      name: "navigate",
+      input: { route: "/projects" },
+    }]);
+    expect(session.history).toHaveLength(3);
+
+    // The last message is a user message with tool_result
+    const toolResultMsg = session.history[2];
+    expect(toolResultMsg.role).toBe("user");
+    const originalContent = JSON.parse(JSON.stringify(toolResultMsg.content));
+
+    // Turn 2: API error after merge — rollback must restore the tool_result message
+    const { rollback } = simulateChatStreamPush(session.history, "What can I see?");
+
+    // After push, the tool_result message was mutated to include text
+    const mutatedContent = toolResultMsg.content as Array<{ type: string }>;
+    expect(mutatedContent).toHaveLength(2); // tool_result + text
+
+    // Rollback
+    rollback();
+
+    // The tool_result message should be restored to its original state
+    const restoredContent = toolResultMsg.content as Array<{ type: string }>;
+    expect(restoredContent).toHaveLength(1); // just tool_result
+    expect(restoredContent[0].type).toBe("tool_result");
+    expect(JSON.stringify(toolResultMsg.content)).toBe(JSON.stringify(originalContent));
+
+    // History is still valid
+    expect(session.history).toHaveLength(3);
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Turn 3: retry succeeds
+    simulateChatStreamPush(session.history, "What can I see?");
+    appendAssistantMessage(session, "You can see your projects.");
+    expect(session.history).toHaveLength(4);
+    expect(validateHistory(session.history).valid).toBe(true);
+  });
+
+  it("multiple consecutive errors with rollback keep history clean", () => {
+    const session: ConversationSession = { history: [], createdAt: Date.now() };
+
+    // Turn 1: successful
+    simulateChatStreamPush(session.history, "Hello");
+    appendAssistantMessage(session, "Hi!");
+
+    // 3 consecutive failures
+    for (let i = 0; i < 3; i++) {
+      const { rollback } = simulateChatStreamPush(session.history, `Fail ${i}`);
+      rollback();
+    }
+
+    // History should still be exactly 2 messages
+    expect(session.history).toHaveLength(2);
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Successful turn after failures
+    simulateChatStreamPush(session.history, "Finally works");
+    appendAssistantMessage(session, "Glad it works!");
+    expect(session.history).toHaveLength(4);
+    expect(validateHistory(session.history).valid).toBe(true);
+  });
+
+  it("5-turn mixed conversation (text + tool_use) stays valid throughout", () => {
+    const session: ConversationSession = { history: [], createdAt: Date.now() };
+
+    // Turn 1: text response
+    simulateChatStreamPush(session.history, "What is Kapable?");
+    appendAssistantMessage(session, "Kapable is a BaaS platform.");
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Turn 2: tool_use response (navigate)
+    simulateChatStreamPush(session.history, "Show me the dashboard");
+    appendAssistantMessage(session, "", [{
+      type: "tool_use",
+      id: "toolu_nav1",
+      name: "navigate",
+      input: { route: "/dashboard" },
+    }]);
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Turn 3: text response (merged into tool_result user message)
+    simulateChatStreamPush(session.history, "What am I looking at?");
+    appendAssistantMessage(session, "This is your organization dashboard.");
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Turn 4: another tool_use (highlight)
+    simulateChatStreamPush(session.history, "Where are my projects?");
+    appendAssistantMessage(session, "Right here!", [{
+      type: "tool_use",
+      id: "toolu_hl1",
+      name: "highlight",
+      input: { selector: "#projects-section" },
+    }]);
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Turn 5: final text response (merged into tool_result)
+    simulateChatStreamPush(session.history, "Thanks!");
+    appendAssistantMessage(session, "Happy to help!");
+    expect(validateHistory(session.history).valid).toBe(true);
+
+    // Verify all roles alternate
+    for (let i = 1; i < session.history.length; i++) {
+      expect(session.history[i].role).not.toBe(session.history[i - 1].role);
+    }
   });
 });

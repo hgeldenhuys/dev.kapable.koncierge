@@ -11,6 +11,30 @@ import {
 const PORT = Number(process.env.PORT) || 3101;
 const KONCIERGE_SECRET = process.env.KONCIERGE_SECRET ?? "";
 
+/**
+ * Extract a user-friendly error message from API errors.
+ * OpenRouter/Anthropic errors often come as "402 {\"error\":{\"message\":\"...\"}}"
+ * — we parse out the inner message so the UI shows something readable.
+ */
+function extractErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) return "Unknown streaming error";
+
+  const raw = err.message;
+
+  // Try to extract JSON from error messages like "402 {...}"
+  const jsonStart = raw.indexOf("{");
+  if (jsonStart >= 0) {
+    try {
+      const parsed = JSON.parse(raw.slice(jsonStart));
+      if (parsed?.error?.message) return parsed.error.message;
+    } catch {
+      // Not valid JSON — fall through
+    }
+  }
+
+  return raw;
+}
+
 /** Origins allowed to call the Koncierge API */
 const ALLOWED_ORIGINS = new Set([
   "https://console.kapable.dev",
@@ -122,7 +146,7 @@ const server = Bun.serve({
       const conversation = getSession(sessionToken);
 
       // Start streaming from Claude
-      const stream = chatStream(core, conversation, body.message, {
+      const { stream, rollback } = chatStream(core, conversation, body.message, {
         route: body.route,
         pageTitle: body.pageTitle,
       });
@@ -167,8 +191,14 @@ const server = Bun.serve({
             controller.enqueue(encoder.encode("data: [DONE]\n\n"));
             controller.close();
           } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : "Unknown streaming error";
-            console.error("Streaming error:", errorMsg);
+            // CRITICAL: Roll back the user message we pushed to history.
+            // Without this, the history has a dangling user message with no
+            // assistant reply, causing "consecutive user messages" errors
+            // on the next request.
+            rollback();
+
+            const errorMsg = extractErrorMessage(err);
+            console.error("[koncierge] Streaming error:", errorMsg);
             const chunk = `data: ${JSON.stringify({ error: errorMsg })}\n\n`;
             controller.enqueue(encoder.encode(chunk));
             controller.enqueue(encoder.encode("data: [DONE]\n\n"));

@@ -185,25 +185,43 @@ export function buildUserMessage(message: string, ctx?: RouteContext): string {
   return `[Context: ${parts.join(", ")}]\n\n${message}`;
 }
 
+/** Result from chatStream — includes the stream and a rollback function for error recovery */
+export interface ChatStreamResult {
+  stream: MessageStream<null>;
+  /** Call this if the API request fails to undo the user message push */
+  rollback: () => void;
+}
+
 /**
  * Send a user message and stream the assistant response.
  * Returns a MessageStream whose `text` events yield token deltas.
  * Appends the user message to history immediately; the caller must
- * call `collectResponse()` after streaming to append the assistant reply.
+ * call `appendAssistantMessage()` after streaming to append the assistant reply,
+ * or call `rollback()` if the stream errors to restore valid history.
  */
 export function chatStream(
   core: KonciergeCore,
   conversation: ConversationSession,
   userMessage: string,
   routeContext?: RouteContext,
-): MessageStream<null> {
+): ChatStreamResult {
   const fullMessage = buildUserMessage(userMessage, routeContext);
 
-  // If the last message is a user message (e.g., synthetic tool_results from
-  // the previous turn), merge the new text into it. The Anthropic API rejects
-  // consecutive messages with the same role.
+  // Snapshot history length before mutation so we can rollback on error
+  const historyLenBefore = conversation.history.length;
+
+  // If the last message is a synthetic user message containing tool_results
+  // from the previous turn, we must merge the new text into it — the
+  // Anthropic API rejects consecutive messages with the same role.
+  // We clone the content array rather than mutating the existing message
+  // so the rollback can restore the original cleanly.
   const lastMsg = conversation.history[conversation.history.length - 1];
+  let originalLastContent: MessageParam["content"] | undefined;
+
   if (lastMsg?.role === "user" && Array.isArray(lastMsg.content)) {
+    // Save original content for rollback
+    originalLastContent = [...lastMsg.content] as MessageParam["content"];
+    // Append the new text block to the existing user message
     (lastMsg.content as Array<unknown>).push({ type: "text", text: fullMessage });
   } else {
     conversation.history.push({ role: "user", content: fullMessage });
@@ -217,7 +235,18 @@ export function chatStream(
     tools: KONCIERGE_TOOLS,
   });
 
-  return stream;
+  // Rollback: restore history to pre-chatStream state if the API call fails
+  const rollback = () => {
+    if (originalLastContent !== undefined) {
+      // We merged into the last message — restore its original content
+      lastMsg.content = originalLastContent;
+    } else {
+      // We pushed a new message — remove it
+      conversation.history.length = historyLenBefore;
+    }
+  };
+
+  return { stream, rollback };
 }
 
 /**

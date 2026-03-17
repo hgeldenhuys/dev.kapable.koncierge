@@ -209,10 +209,10 @@ describe("createKonciergeAdapter", () => {
       result = await gen.next();
     }
 
-    // Should yield text containing the error
+    // The adapter shows a friendly message to the user (not the raw error)
     const lastText = yields[yields.length - 1].content[0].text;
-    expect(lastText).toContain("Rate limited");
-    // Should have called onError
+    expect(lastText).toContain("Sorry, I ran into an issue");
+    // The raw error is passed to onError for toast/logging
     expect(errors.length).toBe(1);
     expect(errors[0]).toContain("Rate limited");
   });
