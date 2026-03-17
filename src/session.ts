@@ -9,8 +9,8 @@ export interface RouteContext {
 
 /** Shared resources loaded at startup */
 export interface KonciergeCore {
-  /** Path to temp file containing the system prompt (avoids E2BIG on Linux) */
-  systemPromptPath: string;
+  /** Agent persona/tool instructions (short, passed via --append-system-prompt) */
+  agentDef: string;
   knowledgeBaseChars: number;
 }
 
@@ -77,15 +77,16 @@ export async function createSession(): Promise<KonciergeCore> {
   console.log(`Knowledge base loaded: ${knowledgeBase.length} chars`);
   console.log(`Agent instructions loaded: ${agentDef.length} chars`);
 
-  // Write system prompt to a temp file to avoid E2BIG on Linux
-  // (131K+ chars exceeds posix_spawn argument limits)
-  const systemPrompt = `${knowledgeBase}\n\n---\n\n${agentDef}`;
-  const promptPath = "/tmp/koncierge-system-prompt.txt";
-  await Bun.write(promptPath, systemPrompt);
-  console.log(`System prompt written to ${promptPath} (${systemPrompt.length} chars)`);
+  // Write knowledge base to CLAUDE.md so CC loads it as project context.
+  // This avoids E2BIG on Linux — the 131K+ knowledge base cannot be passed
+  // as a CLI arg (posix_spawn limit). CC auto-loads CLAUDE.md from CWD.
+  // The short agent def (3.3K) goes via --append-system-prompt.
+  const claudeMdPath = `${root}/CLAUDE.md`;
+  await Bun.write(claudeMdPath, knowledgeBase);
+  console.log(`Knowledge base written to CLAUDE.md (${knowledgeBase.length} chars)`);
 
   return {
-    systemPromptPath: promptPath,
+    agentDef,
     knowledgeBaseChars: knowledgeBase.length,
   };
 }
@@ -130,28 +131,30 @@ export function chatStream(
   const sessionId = tokenToSessionId(sessionToken);
   const isResume = isSessionCreated(sessionId);
 
-  // Build the shell command — system prompt is read from a temp file
-  // to avoid E2BIG (Linux posix_spawn limit on argument size)
-  const sessionFlag = isResume
-    ? `--resume '${sessionId}'`
-    : `--session-id '${sessionId}'`;
-
-  const shellCmd = [
+  const args = [
     "claude",
-    "-p", `'${fullMessage.replace(/'/g, "'\\''")}'`,
-    "--output-format stream-json",
+    "-p", fullMessage,
+    "--output-format", "stream-json",
     "--verbose",
-    "--model sonnet",
-    `--system-prompt "$(cat '${core.systemPromptPath}')"`,
+    "--model", "sonnet",
+    // Agent def is small (~3K) — safe as CLI arg. Knowledge base is in
+    // CLAUDE.md at CWD, loaded automatically by CC as project context.
+    "--append-system-prompt", core.agentDef,
     "--dangerously-skip-permissions",
-    "--max-turns 1",
-    '--tools ""',
-    '--setting-sources ""',
+    "--max-turns", "1",
+    // Performance: disable all tools (Koncierge is conversational only)
+    "--tools", "",
+    // Performance: no Chrome MCP needed
     "--no-chrome",
-    sessionFlag,
-  ].join(" ");
+  ];
 
-  const proc = Bun.spawn(["sh", "-c", shellCmd], {
+  if (isResume) {
+    args.push("--resume", sessionId);
+  } else {
+    args.push("--session-id", sessionId);
+  }
+
+  const proc = Bun.spawn(args, {
     env: { ...process.env },
     stdout: "pipe",
     stderr: "pipe",
