@@ -310,4 +310,211 @@ describe("Session isolation — adversarial token", () => {
     expect(aliceSession.history.length).toBe(2);
     expect(JSON.stringify(aliceSession.history)).toContain("Alice server-side secret");
   });
+
+  it("empty-string token is rejected by handleKonciergeProxy with 401", async () => {
+    const res = await handleKonciergeProxy(makeRequest("probe with empty token"), getConfig(), "");
+    // handleKonciergeProxy treats falsy tokens as missing → 401
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toContain("missing session token");
+  });
+
+  it("null token is rejected by handleKonciergeProxy with 401", async () => {
+    const res = await handleKonciergeProxy(makeRequest("probe with null token"), getConfig(), null);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toContain("missing session token");
+  });
+});
+
+// ── Strict-mock backend: forged tokens get 401, not a fresh session ──────────
+
+/**
+ * This test suite uses a STRICT mock backend that only accepts tokens
+ * it has seen via a prior "register" call. Unknown/forged tokens get 401.
+ * This simulates a real backend that validates session tokens against its
+ * store, closing the gap where the permissive mock always accepts any token.
+ */
+describe("Session isolation — strict backend rejects forged tokens", () => {
+  const registeredTokens = new Set<string>();
+  let strictServer: ReturnType<typeof Bun.serve>;
+  let STRICT_URL: string;
+  const strictConversations = new Map<string, string[]>();
+
+  beforeAll(() => {
+    registeredTokens.clear();
+    strictConversations.clear();
+
+    strictServer = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const url = new URL(req.url);
+
+        if (req.method === "POST" && url.pathname === "/v1/koncierge/message") {
+          const apiKey = req.headers.get("X-Koncierge-Key");
+          if (apiKey !== TEST_SECRET) {
+            return Response.json({ error: "Unauthorized" }, { status: 401 });
+          }
+
+          const sessionToken = req.headers.get("X-Session-Token");
+          if (!sessionToken) {
+            return Response.json({ error: "Missing session token" }, { status: 401 });
+          }
+
+          // STRICT: reject tokens not in the registered set
+          if (!registeredTokens.has(sessionToken)) {
+            return Response.json(
+              { error: "Token not found in session store" },
+              { status: 401 },
+            );
+          }
+
+          const body = await req.json();
+          const message = body.message as string;
+
+          if (!strictConversations.has(sessionToken)) {
+            strictConversations.set(sessionToken, []);
+          }
+          strictConversations.get(sessionToken)!.push(message);
+
+          const history = strictConversations.get(sessionToken)!;
+          const encoder = new TextEncoder();
+          const readable = new ReadableStream({
+            start(controller) {
+              const historyStr = history.join(", ");
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ delta: `History: [${historyStr}]` })}\n\n`),
+              );
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              controller.close();
+            },
+          });
+
+          return new Response(readable, {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+          });
+        }
+
+        return Response.json({ error: "Not Found" }, { status: 404 });
+      },
+    });
+
+    STRICT_URL = `http://localhost:${strictServer.port}`;
+  });
+
+  afterAll(() => {
+    strictServer.stop();
+    registeredTokens.clear();
+    strictConversations.clear();
+  });
+
+  function getStrictConfig(): BffProxyConfig {
+    return { konciergeUrl: STRICT_URL, konciergeSecret: TEST_SECRET };
+  }
+
+  function makeStrictRequest(message: string): Request {
+    return new Request(`${STRICT_URL}/api/koncierge/message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+  }
+
+  it("registered token succeeds, forged token gets 401 from strict backend", async () => {
+    // Derive Alice's real token and register it with the strict backend
+    const aliceToken = extractKonciergeToken(
+      { authMode: "session", userId: "alice-strict-001", orgId: "org-strict" },
+      TEST_SECRET,
+    )!;
+    expect(aliceToken).toHaveLength(64);
+    registeredTokens.add(aliceToken);
+
+    // Alice sends a message — should succeed
+    const aliceRes = await handleKonciergeProxy(
+      makeStrictRequest("Alice secret data in strict backend"),
+      getStrictConfig(),
+      aliceToken,
+    );
+    expect(aliceRes.status).toBe(200);
+    const aliceText = await aliceRes.text();
+    expect(aliceText).toContain("Alice secret data");
+
+    // Forge a token off-by-one from Alice's
+    const forgedToken = forgeToken(aliceToken);
+    expect(forgedToken).not.toBe(aliceToken);
+    expect(registeredTokens.has(forgedToken)).toBe(false);
+
+    // Attacker probes with forged token — strict backend rejects with 401
+    const forgedRes = await handleKonciergeProxy(
+      makeStrictRequest("attacker probe"),
+      getStrictConfig(),
+      forgedToken,
+    );
+    expect(forgedRes.status).toBe(401);
+    const forgedBody = await forgedRes.json();
+    expect(forgedBody.error).toContain("Token not found");
+  });
+
+  it("truncated token gets 401 from strict backend", async () => {
+    const aliceToken = extractKonciergeToken(
+      { authMode: "session", userId: "alice-strict-trunc", orgId: "org-strict-t" },
+      TEST_SECRET,
+    )!;
+    registeredTokens.add(aliceToken);
+
+    // Alice establishes history
+    const aliceRes = await handleKonciergeProxy(
+      makeStrictRequest("Alice strict truncation test"),
+      getStrictConfig(),
+      aliceToken,
+    );
+    expect(aliceRes.status).toBe(200);
+
+    // Truncated token is not registered → 401
+    const truncatedToken = aliceToken.slice(0, 32);
+    expect(registeredTokens.has(truncatedToken)).toBe(false);
+
+    const truncRes = await handleKonciergeProxy(
+      makeStrictRequest("truncated probe"),
+      getStrictConfig(),
+      truncatedToken,
+    );
+    expect(truncRes.status).toBe(401);
+    const truncBody = await truncRes.json();
+    expect(truncBody.error).toContain("Token not found");
+  });
+
+  it("completely random token gets 401 from strict backend", async () => {
+    const randomToken = "deadbeef".repeat(8); // 64-char garbage
+    expect(registeredTokens.has(randomToken)).toBe(false);
+
+    const res = await handleKonciergeProxy(
+      makeStrictRequest("random probe"),
+      getStrictConfig(),
+      randomToken,
+    );
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toContain("Token not found");
+  });
+
+  it("Alice's data remains intact after forged-token rejections", async () => {
+    // Re-query Alice's session — her history should still be there
+    const aliceToken = extractKonciergeToken(
+      { authMode: "session", userId: "alice-strict-001", orgId: "org-strict" },
+      TEST_SECRET,
+    )!;
+
+    const aliceRes = await handleKonciergeProxy(
+      makeStrictRequest("Alice follow-up after attacks"),
+      getStrictConfig(),
+      aliceToken,
+    );
+    expect(aliceRes.status).toBe(200);
+    const aliceText = await aliceRes.text();
+    // Should see both original and follow-up messages
+    expect(aliceText).toContain("Alice secret data");
+    expect(aliceText).toContain("Alice follow-up after attacks");
+  });
 });
