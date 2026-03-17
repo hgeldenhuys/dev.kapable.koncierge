@@ -9,7 +9,7 @@ import { parseToolCalls, type KonciergeToolCall } from "./tool-calls";
 
 // ─── localStorage persistence ────────────────────────────────────────────────
 
-const STORAGE_KEY = "koncierge-collapsed";
+const STORAGE_KEY = "koncierge:collapsed";
 
 function readCollapsed(fallback: boolean): boolean {
   try {
@@ -36,16 +36,18 @@ const panelContainerStyle: CSSProperties = {
   position: "fixed",
   bottom: 16,
   right: 16,
-  zIndex: 9999,
+  zIndex: 40,
   display: "flex",
   flexDirection: "column",
   alignItems: "flex-end",
   fontFamily: "system-ui, -apple-system, sans-serif",
+  maxWidth: "calc(100vw - 32px)",
+  boxSizing: "border-box",
+  overflow: "hidden",
 };
 
 const panelStyle: CSSProperties = {
-  width: 380,
-  maxWidth: "calc(100vw - 32px)",
+  width: "min(380px, calc(100vw - 32px))",
   maxHeight: "70vh",
   display: "flex",
   flexDirection: "column",
@@ -55,6 +57,7 @@ const panelStyle: CSSProperties = {
   boxShadow: "0 8px 32px rgba(0, 0, 0, 0.12)",
   overflow: "hidden",
   marginBottom: 8,
+  colorScheme: "light",
 };
 
 const headerStyle: CSSProperties = {
@@ -101,6 +104,27 @@ const emptyStyle: CSSProperties = {
   color: "#94a3b8",
   fontSize: 13,
   padding: "32px 16px",
+};
+
+const emptyIconStyle: CSSProperties = {
+  width: 40,
+  height: 40,
+  borderRadius: "50%",
+  backgroundColor: "#3b82f6",
+  color: "#ffffff",
+  fontSize: 18,
+  fontWeight: 700,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  margin: "0 auto 12px",
+};
+
+const emptyHeadingStyle: CSSProperties = {
+  fontSize: 15,
+  fontWeight: 600,
+  color: "#1e293b",
+  marginBottom: 8,
 };
 
 const userMessageStyle: CSSProperties = {
@@ -163,6 +187,8 @@ const inputStyle: CSSProperties = {
   boxSizing: "border-box",
   color: "#1e293b",
   backgroundColor: "#ffffff",
+  colorScheme: "light",
+  WebkitTextFillColor: "#1e293b",
 };
 
 const sendButtonStyle: CSSProperties = {
@@ -193,6 +219,46 @@ const fabStyle: CSSProperties = {
   justifyContent: "center",
   boxShadow: "0 4px 12px rgba(59, 130, 246, 0.4)",
 };
+
+// ─── Scoped styles for pseudo-selectors (can't be done with inline styles) ───
+
+const SCOPED_CLASS = "koncierge-panel";
+
+const scopedCSS = `
+.${SCOPED_CLASS} textarea::placeholder,
+.${SCOPED_CLASS} input::placeholder {
+  color: #94a3b8 !important;
+  -webkit-text-fill-color: #94a3b8 !important;
+  opacity: 1;
+}
+.${SCOPED_CLASS} textarea,
+.${SCOPED_CLASS} input {
+  color: #1e293b !important;
+  -webkit-text-fill-color: #1e293b !important;
+  background-color: #ffffff !important;
+  color-scheme: light !important;
+}
+@media (max-width: 480px) {
+  .${SCOPED_CLASS} {
+    max-height: 60vh;
+    width: calc(100vw - 16px) !important;
+  }
+}
+@media (max-width: 375px) {
+  .${SCOPED_CLASS} {
+    max-height: 55vh;
+    width: calc(100vw - 8px) !important;
+    border-radius: 8px !important;
+  }
+  .${SCOPED_CLASS} [data-koncierge-composer] {
+    padding: 6px 8px !important;
+    gap: 4px !important;
+  }
+  .${SCOPED_CLASS} [data-koncierge-header] {
+    padding: 8px 12px !important;
+  }
+}
+`;
 
 // ─── Tool execution context ──────────────────────────────────────────────────
 
@@ -302,11 +368,12 @@ export function KonciergePanel({
 
   return (
     <KonciergeToolsContext.Provider value={onToolCalls ?? null}>
+      <style dangerouslySetInnerHTML={{ __html: scopedCSS }} />
       <div style={panelContainerStyle} className={className}>
         {!collapsed && (
-          <div style={panelStyle}>
+          <div style={panelStyle} className={SCOPED_CLASS}>
             {/* Header */}
-            <div style={headerStyle}>
+            <div style={headerStyle} data-koncierge-header>
               <h3 style={headerTitleStyle}>{title}</h3>
               <button
                 type="button"
@@ -323,7 +390,17 @@ export function KonciergePanel({
               <ThreadPrimitive.Viewport style={viewportStyle}>
                 <ThreadPrimitive.Empty>
                   <div style={emptyStyle}>
-                    {emptyContent ?? "Ask me anything about Kapable!"}
+                    {emptyContent ?? (
+                      <>
+                        <div style={emptyIconStyle} aria-hidden="true">K</div>
+                        <div style={emptyHeadingStyle}>
+                          Hi, I'm Koncierge — ask me anything about the Kapable platform
+                        </div>
+                        <div>
+                          Say <strong>"show me around"</strong> to get started.
+                        </div>
+                      </>
+                    )}
                   </div>
                 </ThreadPrimitive.Empty>
 
@@ -336,7 +413,7 @@ export function KonciergePanel({
               </ThreadPrimitive.Viewport>
 
               {/* Composer: input + send */}
-              <ComposerPrimitive.Root style={composerStyle}>
+              <ComposerPrimitive.Root style={composerStyle} data-koncierge-composer>
                 <ComposerPrimitive.Input
                   placeholder="Type a message..."
                   style={inputStyle as unknown as Record<string, unknown>}

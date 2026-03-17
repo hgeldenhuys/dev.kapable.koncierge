@@ -29,6 +29,16 @@ This repo lives inside `/Users/hgeldenhuys/WebstormProjects/kapable/` alongside:
 - `dev.kapable.epic-runner/` — Autonomous sprint execution
 - `../realtime-db/` — GrowthFin (reference for onboarding widget patterns)
 
+## Koncierge Integration Checklist
+
+To verify the Koncierge panel is correctly integrated into the console, check these five points:
+
+1. **routes.ts** — `api.koncierge.message` and `api.koncierge.health` routes exist in `dev.kapable.console/app/routes/`
+2. **_app.tsx** — `KonciergePanel` is rendered inside the app layout (imported from `@kapable/koncierge/ui`)
+3. **package.json** — `@kapable/koncierge` is listed as a `file:` dependency in `dev.kapable.console/package.json`
+4. **Env vars** — `KONCIERGE_URL` and `KONCIERGE_SECRET` are set in the production environment (verify via `curl https://console.kapable.dev/api/koncierge/health`)
+5. **Smoke test** — Health endpoint returns `{"status":"ok","backend":{"status":"ok"},"integration":{"panel_mounted":true}}`
+
 ## Rules
 
 - Use Bun over npm

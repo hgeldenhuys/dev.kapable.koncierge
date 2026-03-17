@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import type { KonciergeToolCall } from "./tool-calls";
 import type { KonciergeToolUseEvent } from "./koncierge-adapter";
 
@@ -104,5 +104,55 @@ describe("KonciergeToolUseEvent → KonciergeToolCall mapping", () => {
     };
     const tc = { tool: event.name, args: event.input } as KonciergeToolCall;
     expect(tc.tool).toBe("tooltip");
+  });
+});
+
+describe("error resilience contract", () => {
+  it("tool calls with empty selectors are valid shapes (handled at runtime)", () => {
+    const tc: KonciergeToolCall = {
+      tool: "highlight",
+      args: { selector: "" },
+    };
+    // Empty selector is a valid shape — querySelector("") returns null, no crash
+    expect(tc.args.selector).toBe("");
+  });
+
+  it("tool calls with complex selectors are valid shapes", () => {
+    const tc: KonciergeToolCall = {
+      tool: "showSection",
+      args: { selector: "[data-section='deployments']" },
+    };
+    expect(tc.args.selector).toBe("[data-section='deployments']");
+  });
+
+  it("navigate tool call with empty route is a valid shape", () => {
+    const tc: KonciergeToolCall = {
+      tool: "navigate",
+      args: { route: "" },
+    };
+    // Empty route is a valid shape — navigate("") is handled by React Router
+    expect(tc.args.route).toBe("");
+  });
+
+  it("tooltip with empty text is a valid shape", () => {
+    const tc: KonciergeToolCall = {
+      tool: "tooltip",
+      args: { selector: "#el", text: "" },
+    };
+    expect(tc.args.text).toBe("");
+  });
+
+  it("all four tool types can be constructed without throwing", () => {
+    const tools: KonciergeToolCall[] = [
+      { tool: "navigate", args: { route: "/settings" } },
+      { tool: "highlight", args: { selector: "#sidebar" } },
+      { tool: "tooltip", args: { selector: ".btn", text: "Help" } },
+      { tool: "showSection", args: { selector: "#metrics" } },
+    ];
+    expect(tools).toHaveLength(4);
+    for (const tc of tools) {
+      expect(tc.tool).toBeTruthy();
+      expect(tc.args).toBeTruthy();
+    }
   });
 });

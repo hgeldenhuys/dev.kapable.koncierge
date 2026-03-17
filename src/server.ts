@@ -113,6 +113,11 @@ const server = Bun.serve({
         );
       }
 
+      // Log route context for observability
+      console.log(
+        `[koncierge] route=${body.route ?? "(none)"} pageTitle=${body.pageTitle ?? "(none)"} session=${sessionToken.slice(0, 8)}…`,
+      );
+
       // Get or create conversation for this session token
       const conversation = getSession(sessionToken);
 

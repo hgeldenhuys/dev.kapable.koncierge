@@ -45,3 +45,13 @@ export type {
   RequireAuth,
   KonciergeRouteOptions,
 } from "./api.koncierge.message";
+
+export {
+  createConsoleRequireAuth,
+  createApiUserResolver,
+} from "./console-auth";
+
+export type {
+  ConsoleSessionData,
+  ConsoleRequireAuthOptions,
+} from "./console-auth";

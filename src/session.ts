@@ -237,7 +237,7 @@ export function appendAssistantMessage(
   }
 
   // Build content array with text + tool_use blocks
-  const content: Array<Anthropic.Messages.TextBlock | ToolUseBlock> = [];
+  const content: Array<Anthropic.Messages.TextBlockParam | ToolUseBlock> = [];
   if (text) {
     content.push({ type: "text", text });
   }
