@@ -17,6 +17,7 @@
     "service:status": "./scripts/launchd-service.sh status",
     "service:logs": "./scripts/launchd-service.sh logs",
     "test": "bun test",
+    "test:koncierge": "bun run scripts/smoke-test-koncierge.ts",
     "distill": "echo 'Run knowledge distillation agents — see PLAN.md Phase 0'",
     "merge": "echo 'Merge subsystem docs into KAPABLE_KNOWLEDGE_BASE.md'"
   },

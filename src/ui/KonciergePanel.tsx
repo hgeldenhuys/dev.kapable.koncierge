@@ -43,6 +43,7 @@ const panelContainerStyle: CSSProperties = {
   fontFamily: "system-ui, -apple-system, sans-serif",
   maxWidth: "calc(100vw - 32px)",
   boxSizing: "border-box",
+  overflow: "hidden",
 };
 
 const panelStyle: CSSProperties = {
@@ -186,6 +187,8 @@ const inputStyle: CSSProperties = {
   boxSizing: "border-box",
   color: "#1e293b",
   backgroundColor: "#ffffff",
+  colorScheme: "light",
+  WebkitTextFillColor: "#1e293b",
 };
 
 const sendButtonStyle: CSSProperties = {
@@ -225,16 +228,34 @@ const scopedCSS = `
 .${SCOPED_CLASS} textarea::placeholder,
 .${SCOPED_CLASS} input::placeholder {
   color: #94a3b8 !important;
+  -webkit-text-fill-color: #94a3b8 !important;
   opacity: 1;
 }
 .${SCOPED_CLASS} textarea,
 .${SCOPED_CLASS} input {
   color: #1e293b !important;
+  -webkit-text-fill-color: #1e293b !important;
   background-color: #ffffff !important;
+  color-scheme: light !important;
 }
 @media (max-width: 480px) {
   .${SCOPED_CLASS} {
     max-height: 60vh;
+    width: calc(100vw - 16px) !important;
+  }
+}
+@media (max-width: 375px) {
+  .${SCOPED_CLASS} {
+    max-height: 55vh;
+    width: calc(100vw - 8px) !important;
+    border-radius: 8px !important;
+  }
+  .${SCOPED_CLASS} [data-koncierge-composer] {
+    padding: 6px 8px !important;
+    gap: 4px !important;
+  }
+  .${SCOPED_CLASS} [data-koncierge-header] {
+    padding: 8px 12px !important;
   }
 }
 `;
@@ -342,7 +363,7 @@ export function KonciergePanel({
         {!collapsed && (
           <div style={panelStyle} className={SCOPED_CLASS}>
             {/* Header */}
-            <div style={headerStyle}>
+            <div style={headerStyle} data-koncierge-header>
               <h3 style={headerTitleStyle}>{title}</h3>
               <button
                 type="button"
@@ -382,7 +403,7 @@ export function KonciergePanel({
               </ThreadPrimitive.Viewport>
 
               {/* Composer: input + send */}
-              <ComposerPrimitive.Root style={composerStyle}>
+              <ComposerPrimitive.Root style={composerStyle} data-koncierge-composer>
                 <ComposerPrimitive.Input
                   placeholder="Type a message..."
                   style={inputStyle as unknown as Record<string, unknown>}

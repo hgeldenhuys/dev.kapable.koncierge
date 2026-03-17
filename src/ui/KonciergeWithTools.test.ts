@@ -232,6 +232,260 @@ describe("KonciergeWithTools wiring contract", () => {
     });
   });
 
+  describe("end-to-end wiring: SSE tool_use → adapter → bridge → navigate()", () => {
+    it("navigate tool_use SSE event causes navigate() to be called with the correct route", async () => {
+      const { createKonciergeAdapter } = await import("./koncierge-adapter");
+
+      let navigatedTo = "";
+      const navigate = (to: string) => {
+        navigatedTo = to;
+      };
+
+      // Build the same bridge that handleToolUseEvent uses
+      const handleToolUseEvent = (event: KonciergeToolUseEvent) => {
+        const tc = { tool: event.name, args: event.input } as KonciergeToolCall;
+        if (tc.tool === "navigate") {
+          navigate((tc.args as { route: string }).route);
+        }
+      };
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async (_input: RequestInfo | URL, _init?: RequestInit) => {
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode('data: {"delta":"Taking you there."}\n\n'));
+            controller.enqueue(encoder.encode('data: {"tool_use":{"id":"toolu_nav","name":"navigate","input":{"route":"/flows"}}}\n\n'));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      };
+
+      try {
+        const adapter = createKonciergeAdapter({
+          endpoint: "/api/koncierge/message",
+          onToolCall: handleToolUseEvent,
+        });
+
+        const gen = adapter.run({
+          messages: [
+            {
+              role: "user" as const,
+              content: [{ type: "text" as const, text: "show me the flows page" }],
+              id: "msg-e2e-nav",
+              createdAt: new Date(),
+              metadata: {} as never,
+              status: { type: "complete" as const },
+            },
+          ],
+          abortSignal: new AbortController().signal,
+          config: {} as never,
+          context: { useRender: (() => {}) as never, ReadonlyStore: (() => {}) as never } as never,
+          unstable_assistantMessageId: "",
+          onUpdate: () => {},
+        });
+
+        let result = await gen.next();
+        while (!result.done) result = await gen.next();
+
+        // The full chain: SSE tool_use → adapter.onToolCall → handleToolUseEvent → navigate("/flows")
+        expect(navigatedTo).toBe("/flows");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("highlight tool_use SSE event reaches the dispatcher without throwing", async () => {
+      const { createKonciergeAdapter } = await import("./koncierge-adapter");
+
+      const dispatched: KonciergeToolCall[] = [];
+
+      const handleToolUseEvent = (event: KonciergeToolUseEvent) => {
+        const tc = { tool: event.name, args: event.input } as KonciergeToolCall;
+        dispatched.push(tc);
+      };
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => {
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode('data: {"tool_use":{"id":"toolu_hl","name":"highlight","input":{"selector":"[data-nav=\\"sidebar\\"]","durationMs":3000}}}\n\n'));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      };
+
+      try {
+        const adapter = createKonciergeAdapter({
+          endpoint: "/api/koncierge/message",
+          onToolCall: handleToolUseEvent,
+        });
+
+        const gen = adapter.run({
+          messages: [
+            {
+              role: "user" as const,
+              content: [{ type: "text" as const, text: "point out the sidebar" }],
+              id: "msg-e2e-hl",
+              createdAt: new Date(),
+              metadata: {} as never,
+              status: { type: "complete" as const },
+            },
+          ],
+          abortSignal: new AbortController().signal,
+          config: {} as never,
+          context: { useRender: (() => {}) as never, ReadonlyStore: (() => {}) as never } as never,
+          unstable_assistantMessageId: "",
+          onUpdate: () => {},
+        });
+
+        let result = await gen.next();
+        while (!result.done) result = await gen.next();
+
+        expect(dispatched).toHaveLength(1);
+        expect(dispatched[0].tool).toBe("highlight");
+        expect((dispatched[0].args as { selector: string }).selector).toBe('[data-nav="sidebar"]');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("tooltip tool_use SSE event reaches the dispatcher with text and selector", async () => {
+      const { createKonciergeAdapter } = await import("./koncierge-adapter");
+
+      const dispatched: KonciergeToolCall[] = [];
+
+      const handleToolUseEvent = (event: KonciergeToolUseEvent) => {
+        dispatched.push({ tool: event.name, args: event.input } as KonciergeToolCall);
+      };
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => {
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode('data: {"tool_use":{"id":"toolu_tt","name":"tooltip","input":{"selector":"#create-btn","text":"Click to create a flow"}}}\n\n'));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      };
+
+      try {
+        const adapter = createKonciergeAdapter({
+          endpoint: "/api/koncierge/message",
+          onToolCall: handleToolUseEvent,
+        });
+
+        const gen = adapter.run({
+          messages: [
+            {
+              role: "user" as const,
+              content: [{ type: "text" as const, text: "help me create" }],
+              id: "msg-e2e-tt",
+              createdAt: new Date(),
+              metadata: {} as never,
+              status: { type: "complete" as const },
+            },
+          ],
+          abortSignal: new AbortController().signal,
+          config: {} as never,
+          context: { useRender: (() => {}) as never, ReadonlyStore: (() => {}) as never } as never,
+          unstable_assistantMessageId: "",
+          onUpdate: () => {},
+        });
+
+        let result = await gen.next();
+        while (!result.done) result = await gen.next();
+
+        expect(dispatched).toHaveLength(1);
+        expect(dispatched[0].tool).toBe("tooltip");
+        const args = dispatched[0].args as { selector: string; text: string };
+        expect(args.selector).toBe("#create-btn");
+        expect(args.text).toBe("Click to create a flow");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("route context flows through the adapter to the request body", async () => {
+      const { createKonciergeAdapter } = await import("./koncierge-adapter");
+
+      let capturedBody: Record<string, unknown> | null = null;
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+        capturedBody = JSON.parse(init?.body as string);
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode('data: {"delta":"ok"}\n\n'));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      };
+
+      try {
+        // Simulate useReactRouterRoute — a ref-based closure returning current pathname
+        let currentPathname = "/flows";
+        const getRoute = () => currentPathname;
+
+        const adapter = createKonciergeAdapter({
+          endpoint: "/api/koncierge/message",
+          getRoute,
+          getPageTitle: () => "AI Flows — Kapable",
+        });
+
+        const gen = adapter.run({
+          messages: [
+            {
+              role: "user" as const,
+              content: [{ type: "text" as const, text: "where am i" }],
+              id: "msg-e2e-route",
+              createdAt: new Date(),
+              metadata: {} as never,
+              status: { type: "complete" as const },
+            },
+          ],
+          abortSignal: new AbortController().signal,
+          config: {} as never,
+          context: { useRender: (() => {}) as never, ReadonlyStore: (() => {}) as never } as never,
+          unstable_assistantMessageId: "",
+          onUpdate: () => {},
+        });
+
+        let result = await gen.next();
+        while (!result.done) result = await gen.next();
+
+        expect(capturedBody).not.toBeNull();
+        expect(capturedBody!.route).toBe("/flows");
+        expect(capturedBody!.pageTitle).toBe("AI Flows — Kapable");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
   describe("composed component props contract", () => {
     it("minimal props: navigate + pathname + endpoint are sufficient", () => {
       const props = {
