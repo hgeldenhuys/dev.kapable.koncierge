@@ -153,7 +153,7 @@ export function createKonciergeAdapter(
       )) {
         if (event.error) {
           config.onError?.(`Koncierge error: ${event.error}`);
-          fullText += `\n\n⚠️ ${event.error}`;
+          fullText += "\n\nSorry, I ran into an issue. Please try again.";
           yield { content: [{ type: "text" as const, text: fullText }] };
           continue;
         }

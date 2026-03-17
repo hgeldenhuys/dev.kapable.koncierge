@@ -200,6 +200,16 @@ type ToolExecutor = (toolCalls: KonciergeToolCall[]) => void;
 
 const KonciergeToolsContext = createContext<ToolExecutor | null>(null);
 
+// ─── Minimal markdown → HTML ─────────────────────────────────────────────────
+
+function renderSimpleMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/`([^`]+)`/g, '<code style="background:#e2e8f0;padding:1px 4px;border-radius:3px;font-size:12px">$1</code>')
+    .replace(/\n/g, "<br/>");
+}
+
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 function TextPart() {
@@ -218,7 +228,7 @@ function TextPart() {
     executeTools(toolCalls);
   }, [toolCalls, executeTools]);
 
-  return <span>{displayText}</span>;
+  return <span dangerouslySetInnerHTML={{ __html: renderSimpleMarkdown(displayText) }} />;
 }
 
 function UserMessage() {

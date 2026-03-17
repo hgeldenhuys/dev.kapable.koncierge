@@ -2,8 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream";
 import type { MessageParam, Tool, ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
 
+// OpenRouter + Anthropic SDK forces the "anthropic" provider, so only Anthropic models work.
+// For non-Anthropic models, switch to the OpenAI SDK or use fetch directly.
 const MODEL = process.env.KONCIERGE_MODEL
-  || (process.env.OPENROUTER_API_KEY ? "google/gemini-2.5-flash-preview" : "claude-sonnet-4-20250514");
+  || (process.env.OPENROUTER_API_KEY ? "anthropic/claude-sonnet-4" : "claude-sonnet-4-20250514");
 
 // ─── Koncierge tool definitions for the Claude API ──────────────────────────
 
@@ -196,7 +198,16 @@ export function chatStream(
   routeContext?: RouteContext,
 ): MessageStream<null> {
   const fullMessage = buildUserMessage(userMessage, routeContext);
-  conversation.history.push({ role: "user", content: fullMessage });
+
+  // If the last message is a user message (e.g., synthetic tool_results from
+  // the previous turn), merge the new text into it. The Anthropic API rejects
+  // consecutive messages with the same role.
+  const lastMsg = conversation.history[conversation.history.length - 1];
+  if (lastMsg?.role === "user" && Array.isArray(lastMsg.content)) {
+    (lastMsg.content as Array<unknown>).push({ type: "text", text: fullMessage });
+  } else {
+    conversation.history.push({ role: "user", content: fullMessage });
+  }
 
   const stream = core.client.messages.stream({
     model: MODEL,
