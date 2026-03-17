@@ -237,6 +237,8 @@ const server = Bun.serve({
                       for (const chunk of chunks) {
                         const sseData = JSON.stringify({ delta: chunk });
                         controller.enqueue(encoder.encode(`data: ${sseData}\n\n`));
+                        // Yield to event loop so chunks flush as separate TCP frames
+                        await new Promise(r => setTimeout(r, 15));
                       }
                     }
                   }
