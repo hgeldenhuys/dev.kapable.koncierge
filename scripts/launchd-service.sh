@@ -32,13 +32,16 @@ cmd_install() {
   source "$ENV_FILE"
   set +a
 
-  if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-    echo "ERROR: ANTHROPIC_API_KEY not set in $ENV_FILE"
+  if [ -z "${KONCIERGE_SECRET:-}" ] || [ "$KONCIERGE_SECRET" = "change-me" ]; then
+    echo "ERROR: KONCIERGE_SECRET not set or still default in $ENV_FILE"
     exit 1
   fi
 
-  if [ -z "${KONCIERGE_SECRET:-}" ] || [ "$KONCIERGE_SECRET" = "change-me" ]; then
-    echo "ERROR: KONCIERGE_SECRET not set or still default in $ENV_FILE"
+  # CC backend needs claude CLI in PATH
+  CLAUDE_PATH="$(which claude 2>/dev/null || echo "$HOME/.local/bin/claude")"
+  CLAUDE_DIR="$(dirname "$CLAUDE_PATH")"
+  if [ ! -x "$CLAUDE_PATH" ]; then
+    echo "ERROR: claude CLI not found. Install Claude Code first."
     exit 1
   fi
 
@@ -68,12 +71,14 @@ cmd_install() {
 
   <key>EnvironmentVariables</key>
   <dict>
-    <key>ANTHROPIC_API_KEY</key>
-    <string>${ANTHROPIC_API_KEY}</string>
     <key>KONCIERGE_SECRET</key>
     <string>${KONCIERGE_SECRET}</string>
     <key>PORT</key>
     <string>${PORT:-3101}</string>
+    <key>HOME</key>
+    <string>${HOME}</string>
+    <key>PATH</key>
+    <string>${CLAUDE_DIR}:${BUN_PATH%/*}:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
 
   <key>RunAtLoad</key>

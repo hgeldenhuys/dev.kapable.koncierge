@@ -1,6 +1,6 @@
 {
   "name": "@kapable/koncierge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Kapable platform onboarding assistant — knowledge distillation + in-console chat agent",
   "private": true,
   "exports": {
@@ -22,7 +22,6 @@
     "merge": "echo 'Merge subsystem docs into KAPABLE_KNOWLEDGE_BASE.md'"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.78.0",
     "@assistant-ui/react": "^0.12.17",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"

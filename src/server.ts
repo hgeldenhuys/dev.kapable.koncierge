@@ -1,39 +1,13 @@
-import type { ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
 import {
   createSession,
-  getSession,
   getSessionCount,
   chatStream,
-  appendAssistantMessage,
+  extractToolCalls,
   type KonciergeCore,
 } from "./session";
 
 const PORT = Number(process.env.PORT) || 3101;
 const KONCIERGE_SECRET = process.env.KONCIERGE_SECRET ?? "";
-
-/**
- * Extract a user-friendly error message from API errors.
- * OpenRouter/Anthropic errors often come as "402 {\"error\":{\"message\":\"...\"}}"
- * — we parse out the inner message so the UI shows something readable.
- */
-function extractErrorMessage(err: unknown): string {
-  if (!(err instanceof Error)) return "Unknown streaming error";
-
-  const raw = err.message;
-
-  // Try to extract JSON from error messages like "402 {...}"
-  const jsonStart = raw.indexOf("{");
-  if (jsonStart >= 0) {
-    try {
-      const parsed = JSON.parse(raw.slice(jsonStart));
-      if (parsed?.error?.message) return parsed.error.message;
-    } catch {
-      // Not valid JSON — fall through
-    }
-  }
-
-  return raw;
-}
 
 /** Origins allowed to call the Koncierge API */
 const ALLOWED_ORIGINS = new Set([
@@ -56,7 +30,67 @@ function corsHeaders(requestOrigin?: string | null): Record<string, string> {
   };
 }
 
-// Initialise the warm Claude session before starting the server
+// ─── NDJSON stream parser ────────────────────────────────────────────────────
+
+interface CCEvent {
+  type: string;
+  subtype?: string;
+  message?: {
+    content?: Array<{ type: string; text?: string; thinking?: string }>;
+  };
+  result?: string;
+}
+
+/**
+ * Extract text from a CC assistant event's content blocks.
+ */
+function extractTextFromEvent(event: CCEvent): string {
+  if (!event.message?.content) return "";
+  let text = "";
+  for (const block of event.message.content) {
+    if (block.type === "text" && block.text) {
+      text += block.text;
+    }
+  }
+  return text;
+}
+
+/**
+ * Chunk text into segments for synthetic streaming.
+ * Splits on word boundaries for natural reading flow.
+ */
+function chunkText(text: string, maxChunkSize: number = 30): string[] {
+  if (text.length <= maxChunkSize) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    if (remaining.length <= maxChunkSize) {
+      chunks.push(remaining);
+      break;
+    }
+
+    // Find a word boundary near maxChunkSize
+    let splitAt = maxChunkSize;
+    const spaceIdx = remaining.lastIndexOf(" ", maxChunkSize);
+    const newlineIdx = remaining.lastIndexOf("\n", maxChunkSize);
+
+    if (newlineIdx > 0) {
+      splitAt = newlineIdx + 1; // include the newline
+    } else if (spaceIdx > maxChunkSize / 2) {
+      splitAt = spaceIdx + 1; // include the space
+    }
+
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt);
+  }
+
+  return chunks;
+}
+
+// ─── Server ──────────────────────────────────────────────────────────────────
+
 let core: KonciergeCore;
 
 try {
@@ -83,7 +117,8 @@ const server = Bun.serve({
       return Response.json(
         {
           status: "ok",
-          version: "0.1.0",
+          version: "0.2.0",
+          backend: "claude-code",
           knowledgeBaseChars: core.knowledgeBaseChars,
           activeSessions: getSessionCount(),
         },
@@ -142,65 +177,112 @@ const server = Bun.serve({
         `[koncierge] route=${body.route ?? "(none)"} pageTitle=${body.pageTitle ?? "(none)"} session=${sessionToken.slice(0, 8)}…`,
       );
 
-      // Get or create conversation for this session token
-      const conversation = getSession(sessionToken);
-
-      // Start streaming from Claude
-      const { stream, rollback } = chatStream(core, conversation, body.message, {
+      // Spawn CC subprocess
+      const { stdout, process: proc } = chatStream(core, sessionToken, body.message, {
         route: body.route,
         pageTitle: body.pageTitle,
       });
 
-      // Build SSE ReadableStream
+      // Build SSE ReadableStream from CC's NDJSON output
       const encoder = new TextEncoder();
-      let fullText = "";
-      const toolUseBlocks: ToolUseBlock[] = [];
 
       const readable = new ReadableStream({
         async start(controller) {
           try {
-            stream.on("text", (delta: string) => {
-              fullText += delta;
-              const chunk = `data: ${JSON.stringify({ delta })}\n\n`;
-              controller.enqueue(encoder.encode(chunk));
-            });
+            const reader = stdout.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+            let accumulatedText = "";
 
-            // Capture completed content blocks — tool_use blocks are emitted as SSE events
-            stream.on("contentBlock", (block) => {
-              if (block.type === "tool_use") {
-                toolUseBlocks.push(block as ToolUseBlock);
-                const chunk = `data: ${JSON.stringify({
-                  tool_use: {
-                    id: block.id,
-                    name: block.name,
-                    input: block.input,
-                  },
-                })}\n\n`;
-                controller.enqueue(encoder.encode(chunk));
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() ?? "";
+
+              for (const line of lines) {
+                if (!line.trim()) continue;
+
+                let event: CCEvent;
+                try {
+                  event = JSON.parse(line);
+                } catch {
+                  continue; // skip malformed lines
+                }
+
+                // Handle assistant events — extract text deltas
+                if (event.type === "assistant" && event.message?.content) {
+                  const fullText = extractTextFromEvent(event);
+
+                  if (fullText.length > accumulatedText.length) {
+                    const newText = fullText.slice(accumulatedText.length);
+                    accumulatedText = fullText;
+
+                    // Process for tool calls
+                    const { cleanText, toolCalls } = extractToolCalls(newText);
+
+                    // Emit tool calls as SSE events
+                    for (const tc of toolCalls) {
+                      const sseData = JSON.stringify({
+                        tool_use: { id: tc.id, name: tc.name, input: tc.input },
+                      });
+                      controller.enqueue(encoder.encode(`data: ${sseData}\n\n`));
+                    }
+
+                    // Emit clean text as chunked deltas for streaming feel
+                    if (cleanText.trim()) {
+                      const chunks = chunkText(cleanText);
+                      for (const chunk of chunks) {
+                        const sseData = JSON.stringify({ delta: chunk });
+                        controller.enqueue(encoder.encode(`data: ${sseData}\n\n`));
+                      }
+                    }
+                  }
+                }
+
+                // Handle result event — stream is done
+                if (event.type === "result") {
+                  // result.result may have the final text — check for any remaining
+                  // tool calls in the full accumulated text (safety net)
+                  break;
+                }
               }
-            });
+            }
 
-            // Wait for the stream to finish
-            await stream.finalMessage();
+            // Wait for process to exit
+            await proc.exited;
 
-            // Append complete assistant response to conversation history
-            // (includes tool_use blocks + synthetic tool_results for valid history)
-            appendAssistantMessage(conversation, fullText, toolUseBlocks);
+            // Check for errors
+            if (proc.exitCode !== 0) {
+              // Read stderr for error details
+              const stderrReader = proc.stderr.getReader();
+              let stderrText = "";
+              const stderrDecoder = new TextDecoder();
+              while (true) {
+                const { done: stderrDone, value: stderrValue } = await stderrReader.read();
+                if (stderrDone) break;
+                stderrText += stderrDecoder.decode(stderrValue, { stream: true });
+              }
+
+              if (accumulatedText.length === 0) {
+                // No text was emitted — report the error
+                const errorMsg = stderrText.trim() || `Claude Code exited with code ${proc.exitCode}`;
+                console.error("[koncierge] CC error:", errorMsg);
+                const sseData = JSON.stringify({ error: errorMsg });
+                controller.enqueue(encoder.encode(`data: ${sseData}\n\n`));
+              }
+            }
 
             // Signal completion
             controller.enqueue(encoder.encode("data: [DONE]\n\n"));
             controller.close();
           } catch (err) {
-            // CRITICAL: Roll back the user message we pushed to history.
-            // Without this, the history has a dangling user message with no
-            // assistant reply, causing "consecutive user messages" errors
-            // on the next request.
-            rollback();
-
-            const errorMsg = extractErrorMessage(err);
+            const errorMsg = err instanceof Error ? err.message : "Unknown streaming error";
             console.error("[koncierge] Streaming error:", errorMsg);
-            const chunk = `data: ${JSON.stringify({ error: errorMsg })}\n\n`;
-            controller.enqueue(encoder.encode(chunk));
+            const sseData = JSON.stringify({ error: errorMsg });
+            controller.enqueue(encoder.encode(`data: ${sseData}\n\n`));
             controller.enqueue(encoder.encode("data: [DONE]\n\n"));
             controller.close();
           }
@@ -225,4 +307,4 @@ const server = Bun.serve({
   },
 });
 
-console.log(`Koncierge server listening on http://localhost:${server.port}`);
+console.log(`Koncierge server listening on http://localhost:${server.port} (Claude Code backend)`);

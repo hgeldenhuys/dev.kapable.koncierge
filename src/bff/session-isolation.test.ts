@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { handleKonciergeProxy, type BffProxyConfig } from "./proxy";
 import { extractKonciergeToken, type AuthIdentity } from "./extract-user-token";
-import { getSession } from "../session";
 
 /**
  * Integration test: two different authenticated users get isolated
@@ -289,27 +288,7 @@ describe("Session isolation — adversarial token", () => {
     expect(truncText).toContain("truncated probe");
   });
 
-  it("server-level getSession(forgedToken) returns empty history, not Alice's", () => {
-    // Use the server-level session store directly (not the mock HTTP backend)
-    const aliceServerToken = "adversarial-alice-server-token-real";
-    const forgedServerToken = forgeToken(aliceServerToken);
-
-    // Alice establishes a session with history
-    const aliceSession = getSession(aliceServerToken);
-    aliceSession.history.push({ role: "user", content: "Alice server-side secret" });
-    aliceSession.history.push({ role: "assistant", content: "Welcome Alice!" });
-    expect(aliceSession.history.length).toBe(2);
-
-    // Attacker tries the forged token — must get a FRESH session
-    const forgedSession = getSession(forgedServerToken);
-    expect(forgedSession).not.toBe(aliceSession);
-    expect(forgedSession.history.length).toBe(0);
-    expect(forgedSession.history).not.toBe(aliceSession.history);
-
-    // Alice's session is unaffected
-    expect(aliceSession.history.length).toBe(2);
-    expect(JSON.stringify(aliceSession.history)).toContain("Alice server-side secret");
-  });
+  // NOTE: server-level getSession test removed — CC manages session isolation via --session-id
 
   it("empty-string token is rejected by handleKonciergeProxy with 401", async () => {
     const res = await handleKonciergeProxy(makeRequest("probe with empty token"), getConfig(), "");

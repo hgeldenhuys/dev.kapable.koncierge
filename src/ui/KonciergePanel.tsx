@@ -52,12 +52,11 @@ const panelStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   borderRadius: 12,
-  border: "1px solid #e2e8f0",
-  backgroundColor: "#ffffff",
-  boxShadow: "0 8px 32px rgba(0, 0, 0, 0.12)",
+  border: "1px solid var(--k-border)",
+  backgroundColor: "var(--k-bg)",
+  boxShadow: "var(--k-shadow)",
   overflow: "hidden",
   marginBottom: 8,
-  colorScheme: "light",
 };
 
 const headerStyle: CSSProperties = {
@@ -65,14 +64,14 @@ const headerStyle: CSSProperties = {
   alignItems: "center",
   justifyContent: "space-between",
   padding: "12px 16px",
-  borderBottom: "1px solid #e2e8f0",
-  backgroundColor: "#f8fafc",
+  borderBottom: "1px solid var(--k-border)",
+  backgroundColor: "var(--k-bg-subtle)",
 };
 
 const headerTitleStyle: CSSProperties = {
   fontSize: 14,
   fontWeight: 600,
-  color: "#1e293b",
+  color: "var(--k-text)",
   margin: 0,
 };
 
@@ -81,7 +80,7 @@ const collapseButtonStyle: CSSProperties = {
   border: "none",
   cursor: "pointer",
   fontSize: 18,
-  color: "#64748b",
+  color: "var(--k-text-muted)",
   padding: "0 4px",
   lineHeight: 1,
   minWidth: 44,
@@ -101,7 +100,7 @@ const viewportStyle: CSSProperties = {
 
 const emptyStyle: CSSProperties = {
   textAlign: "center",
-  color: "#94a3b8",
+  color: "var(--k-text-muted)",
   fontSize: 13,
   padding: "32px 16px",
 };
@@ -110,8 +109,8 @@ const emptyIconStyle: CSSProperties = {
   width: 40,
   height: 40,
   borderRadius: "50%",
-  backgroundColor: "#3b82f6",
-  color: "#ffffff",
+  backgroundColor: "var(--k-accent)",
+  color: "var(--k-accent-text)",
   fontSize: 18,
   fontWeight: 700,
   display: "flex",
@@ -123,7 +122,7 @@ const emptyIconStyle: CSSProperties = {
 const emptyHeadingStyle: CSSProperties = {
   fontSize: 15,
   fontWeight: 600,
-  color: "#1e293b",
+  color: "var(--k-text)",
   marginBottom: 8,
 };
 
@@ -134,8 +133,8 @@ const userMessageStyle: CSSProperties = {
 };
 
 const userBubbleStyle: CSSProperties = {
-  backgroundColor: "#3b82f6",
-  color: "#ffffff",
+  backgroundColor: "var(--k-accent)",
+  color: "var(--k-accent-text)",
   borderRadius: "12px 12px 4px 12px",
   padding: "8px 12px",
   fontSize: 13,
@@ -152,8 +151,8 @@ const assistantMessageStyle: CSSProperties = {
 };
 
 const assistantBubbleStyle: CSSProperties = {
-  backgroundColor: "#f1f5f9",
-  color: "#1e293b",
+  backgroundColor: "var(--k-bg-muted)",
+  color: "var(--k-text)",
   borderRadius: "12px 12px 12px 4px",
   padding: "8px 12px",
   fontSize: 13,
@@ -168,14 +167,14 @@ const composerStyle: CSSProperties = {
   alignItems: "center",
   gap: 8,
   padding: "8px 12px",
-  borderTop: "1px solid #e2e8f0",
-  backgroundColor: "#ffffff",
+  borderTop: "1px solid var(--k-border)",
+  backgroundColor: "var(--k-bg)",
 };
 
 const inputStyle: CSSProperties = {
   flex: 1,
   minWidth: 0,
-  border: "1px solid #e2e8f0",
+  border: "1px solid var(--k-border)",
   borderRadius: 8,
   padding: "8px 12px",
   fontSize: 13,
@@ -185,15 +184,13 @@ const inputStyle: CSSProperties = {
   lineHeight: 1.4,
   maxHeight: 100,
   boxSizing: "border-box",
-  color: "#1e293b",
-  backgroundColor: "#ffffff",
-  colorScheme: "light",
-  WebkitTextFillColor: "#1e293b",
+  color: "var(--k-text)",
+  backgroundColor: "var(--k-bg)",
 };
 
 const sendButtonStyle: CSSProperties = {
-  backgroundColor: "#3b82f6",
-  color: "#ffffff",
+  backgroundColor: "var(--k-accent)",
+  color: "var(--k-accent-text)",
   border: "none",
   borderRadius: 8,
   padding: "8px 14px",
@@ -209,15 +206,15 @@ const fabStyle: CSSProperties = {
   width: 48,
   height: 48,
   borderRadius: "50%",
-  backgroundColor: "#3b82f6",
-  color: "#ffffff",
+  backgroundColor: "var(--k-accent, #3b82f6)",
+  color: "var(--k-accent-text, #ffffff)",
   border: "none",
   cursor: "pointer",
   fontSize: 20,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  boxShadow: "0 4px 12px rgba(59, 130, 246, 0.4)",
+  boxShadow: "var(--k-fab-shadow, 0 4px 12px rgba(59, 130, 246, 0.4))",
 };
 
 // ─── Scoped styles for pseudo-selectors (can't be done with inline styles) ───
@@ -225,18 +222,63 @@ const fabStyle: CSSProperties = {
 const SCOPED_CLASS = "koncierge-panel";
 
 const scopedCSS = `
+/* ─── Theme variables ─────────────────────────────────────────────────── */
+.${SCOPED_CLASS} {
+  --k-bg: #ffffff;
+  --k-bg-subtle: #f8fafc;
+  --k-bg-muted: #f1f5f9;
+  --k-text: #1e293b;
+  --k-text-muted: #94a3b8;
+  --k-border: #e2e8f0;
+  --k-accent: #3b82f6;
+  --k-accent-text: #ffffff;
+  --k-code-bg: #e2e8f0;
+  --k-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --k-fab-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  color-scheme: light dark;
+}
+/* Dark mode: .dark ancestor (shadcn/ui) or OS preference */
+.dark .${SCOPED_CLASS},
+[data-theme="dark"] .${SCOPED_CLASS} {
+  --k-bg: #1e1e2e;
+  --k-bg-subtle: #252538;
+  --k-bg-muted: #2a2a3e;
+  --k-text: #e2e8f0;
+  --k-text-muted: #64748b;
+  --k-border: #3a3a52;
+  --k-accent: #60a5fa;
+  --k-accent-text: #ffffff;
+  --k-code-bg: #3a3a52;
+  --k-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --k-fab-shadow: 0 4px 12px rgba(96, 165, 250, 0.4);
+}
+@media (prefers-color-scheme: dark) {
+  .${SCOPED_CLASS}:not(.koncierge-light) {
+    --k-bg: #1e1e2e;
+    --k-bg-subtle: #252538;
+    --k-bg-muted: #2a2a3e;
+    --k-text: #e2e8f0;
+    --k-text-muted: #64748b;
+    --k-border: #3a3a52;
+    --k-accent: #60a5fa;
+    --k-accent-text: #ffffff;
+    --k-code-bg: #3a3a52;
+    --k-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --k-fab-shadow: 0 4px 12px rgba(96, 165, 250, 0.4);
+  }
+}
+/* ─── Scoped pseudo-selectors ─────────────────────────────────────────── */
 .${SCOPED_CLASS} textarea::placeholder,
 .${SCOPED_CLASS} input::placeholder {
-  color: #94a3b8 !important;
-  -webkit-text-fill-color: #94a3b8 !important;
+  color: var(--k-text-muted) !important;
+  -webkit-text-fill-color: var(--k-text-muted) !important;
   opacity: 1;
 }
 .${SCOPED_CLASS} textarea,
 .${SCOPED_CLASS} input {
-  color: #1e293b !important;
-  -webkit-text-fill-color: #1e293b !important;
-  background-color: #ffffff !important;
-  color-scheme: light !important;
+  color: var(--k-text) !important;
+  -webkit-text-fill-color: var(--k-text) !important;
+  background-color: var(--k-bg) !important;
 }
 @media (max-width: 480px) {
   .${SCOPED_CLASS} {
@@ -272,7 +314,7 @@ function renderSimpleMarkdown(text: string): string {
   return text
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/`([^`]+)`/g, '<code style="background:#e2e8f0;padding:1px 4px;border-radius:3px;font-size:12px">$1</code>')
+    .replace(/`([^`]+)`/g, '<code style="background:var(--k-code-bg);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>')
     .replace(/\n/g, "<br/>");
 }
 

@@ -1,177 +1,53 @@
-import Anthropic from "@anthropic-ai/sdk";
-import type { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream";
-import type { MessageParam, Tool, ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
+import type { Subprocess } from "bun";
 
-// OpenRouter + Anthropic SDK forces the "anthropic" provider, so only Anthropic models work.
-// For non-Anthropic models, switch to the OpenAI SDK or use fetch directly.
-const MODEL = process.env.KONCIERGE_MODEL
-  || (process.env.OPENROUTER_API_KEY ? "anthropic/claude-sonnet-4" : "claude-sonnet-4-20250514");
-
-// ─── Koncierge tool definitions for the Claude API ──────────────────────────
-
-export const KONCIERGE_TOOLS: Tool[] = [
-  {
-    name: "navigate",
-    description:
-      "Navigate the user to a specific page in the Kapable console. Use this when the user asks to go somewhere or you want to guide them to a feature.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        route: {
-          type: "string",
-          description: "The route path to navigate to, e.g. /projects, /flows, /dashboard",
-        },
-      },
-      required: ["route"],
-    },
-  },
-  {
-    name: "highlight",
-    description:
-      "Draw attention to a UI element by highlighting it with a pulsing outline and scrolling it into view.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        selector: {
-          type: "string",
-          description: "CSS selector for the element to highlight, e.g. #sidebar-projects",
-        },
-        durationMs: {
-          type: "number",
-          description: "How long to keep the highlight visible in milliseconds. Default: 3000",
-        },
-      },
-      required: ["selector"],
-    },
-  },
-  {
-    name: "tooltip",
-    description:
-      "Show a contextual tooltip near a UI element to explain what it does.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        selector: {
-          type: "string",
-          description: "CSS selector for the target element",
-        },
-        text: {
-          type: "string",
-          description: "The tooltip text to display",
-        },
-        durationMs: {
-          type: "number",
-          description: "How long to show the tooltip in milliseconds. Default: 3000",
-        },
-      },
-      required: ["selector", "text"],
-    },
-  },
-  {
-    name: "showSection",
-    description:
-      "Scroll to and highlight a section of the current page.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        selector: {
-          type: "string",
-          description: "CSS selector for the section to show, e.g. #environment-variables",
-        },
-      },
-      required: ["selector"],
-    },
-  },
-];
-
-/** Shared resources: Anthropic client + cached system prompt */
-export interface KonciergeCore {
-  client: Anthropic;
-  systemPrompt: Anthropic.Messages.TextBlockParam[];
-  knowledgeBaseChars: number;
-}
-
-/** Per-user conversation state keyed by session token */
-export interface ConversationSession {
-  history: MessageParam[];
-  createdAt: number;
-}
-
-/** In-memory session store */
-const sessions = new Map<string, ConversationSession>();
-
-/** Get or create a conversation session for a given token */
-export function getSession(token: string): ConversationSession {
-  let session = sessions.get(token);
-  if (!session) {
-    session = { history: [], createdAt: Date.now() };
-    sessions.set(token, session);
-  }
-  return session;
-}
-
-/** Return active session count (for /health) */
-export function getSessionCount(): number {
-  return sessions.size;
-}
-
-/**
- * Load knowledge base and agent instructions from disk,
- * construct the cached system prompt, and initialise the Anthropic client.
- */
-export async function createSession(): Promise<KonciergeCore> {
-  const root = import.meta.dir + "/..";
-
-  // Task 0 — Read KAPABLE_KNOWLEDGE_BASE.md
-  const knowledgeBase = await Bun.file(`${root}/knowledge/KAPABLE_KNOWLEDGE_BASE.md`).text();
-
-  // Task 1 — Read agents/koncierge.md
-  const agentInstructions = await Bun.file(`${root}/agents/koncierge.md`).text();
-
-  // Task 4 — Log knowledge base size
-  console.log(`Knowledge base loaded: ${knowledgeBase.length} chars`);
-  console.log(`Agent instructions loaded: ${agentInstructions.length} chars`);
-
-  // Task 2 — Compose system prompt with both documents
-  // The knowledge base is large and stable → mark it for prompt caching.
-  // The agent instructions are smaller but also stable → cache them too.
-  const systemPrompt: Anthropic.Messages.TextBlockParam[] = [
-    {
-      type: "text" as const,
-      text: knowledgeBase,
-      cache_control: { type: "ephemeral" },
-    },
-    {
-      type: "text" as const,
-      text: agentInstructions,
-      cache_control: { type: "ephemeral" },
-    },
-  ];
-
-  // Task 3 — Initialise Anthropic client
-  // Support both direct Anthropic keys and OpenRouter keys.
-  // If OPENROUTER_API_KEY is set, use OpenRouter as the base URL.
-  // Otherwise, ANTHROPIC_API_KEY is read from env automatically by the SDK.
-  const openrouterKey = process.env.OPENROUTER_API_KEY;
-  const client = openrouterKey
-    ? new Anthropic({
-        apiKey: openrouterKey,
-        // SDK appends /v1/messages, so base must NOT include /v1
-        baseURL: "https://openrouter.ai/api",
-      })
-    : new Anthropic();
-
-  return {
-    client,
-    systemPrompt,
-    knowledgeBaseChars: knowledgeBase.length,
-  };
-}
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface RouteContext {
   route?: string;
   pageTitle?: string;
 }
+
+/** Shared resources loaded at startup */
+export interface KonciergeCore {
+  systemPrompt: string;
+  knowledgeBaseChars: number;
+}
+
+/** Result from chatStream — the CC subprocess and its stdout pipe */
+export interface ChatStreamResult {
+  stdout: ReadableStream<Uint8Array>;
+  process: Subprocess;
+}
+
+/** A tool call parsed from the assistant's text output */
+export interface ParsedToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+// ─── Active session tracking (for /health + resume logic) ────────────────────
+
+/**
+ * Tracks which session UUIDs have been created via --session-id.
+ * On first message: --session-id creates the CC session.
+ * On subsequent messages: --resume continues it.
+ */
+const createdSessions = new Set<string>();
+
+export function trackSession(token: string): void {
+  createdSessions.add(token);
+}
+
+export function isSessionCreated(sessionId: string): boolean {
+  return createdSessions.has(sessionId);
+}
+
+export function getSessionCount(): number {
+  return createdSessions.size;
+}
+
+// ─── Build user message ──────────────────────────────────────────────────────
 
 /**
  * Build the full user message with optional route context prefix.
@@ -185,106 +61,171 @@ export function buildUserMessage(message: string, ctx?: RouteContext): string {
   return `[Context: ${parts.join(", ")}]\n\n${message}`;
 }
 
-/** Result from chatStream — includes the stream and a rollback function for error recovery */
-export interface ChatStreamResult {
-  stream: MessageStream<null>;
-  /** Call this if the API request fails to undo the user message push */
-  rollback: () => void;
-}
+// ─── Session creation (load knowledge base + agent def) ──────────────────────
 
 /**
- * Send a user message and stream the assistant response.
- * Returns a MessageStream whose `text` events yield token deltas.
- * Appends the user message to history immediately; the caller must
- * call `appendAssistantMessage()` after streaming to append the assistant reply,
- * or call `rollback()` if the stream errors to restore valid history.
+ * Load knowledge base and agent instructions from disk.
+ * Combines them into a single system prompt string.
+ */
+export async function createSession(): Promise<KonciergeCore> {
+  const root = import.meta.dir + "/..";
+
+  const knowledgeBase = await Bun.file(`${root}/knowledge/KAPABLE_KNOWLEDGE_BASE.md`).text();
+  const agentDef = await Bun.file(`${root}/agents/koncierge-cc.md`).text();
+
+  console.log(`Knowledge base loaded: ${knowledgeBase.length} chars`);
+  console.log(`Agent instructions loaded: ${agentDef.length} chars`);
+
+  const systemPrompt = `${knowledgeBase}\n\n---\n\n${agentDef}`;
+
+  return {
+    systemPrompt,
+    knowledgeBaseChars: knowledgeBase.length,
+  };
+}
+
+// ─── Token → UUID conversion ─────────────────────────────────────────────────
+
+/**
+ * Convert a session token (arbitrary string) to a deterministic UUID.
+ * CC --session-id requires a valid UUID. We hash the token with SHA-256
+ * and format the first 16 bytes as a v4-format UUID.
+ */
+export function tokenToSessionId(token: string): string {
+  const hasher = new Bun.CryptoHasher("sha256");
+  hasher.update(token);
+  const hex = hasher.digest("hex");
+  // Format as UUID v4: xxxxxxxx-xxxx-4xxx-Nxxx-xxxxxxxxxxxx
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    "4" + hex.slice(13, 16),
+    ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16) + hex.slice(17, 20),
+    hex.slice(20, 32),
+  ].join("-");
+}
+
+// ─── Chat stream (CC subprocess) ─────────────────────────────────────────────
+
+/**
+ * Spawn a Claude Code subprocess for streaming chat.
+ *
+ * First message for a token: --session-id creates the CC session.
+ * Subsequent messages: --resume continues the conversation.
+ * CC manages the full conversation history internally.
  */
 export function chatStream(
   core: KonciergeCore,
-  conversation: ConversationSession,
+  sessionToken: string,
   userMessage: string,
   routeContext?: RouteContext,
 ): ChatStreamResult {
   const fullMessage = buildUserMessage(userMessage, routeContext);
+  const sessionId = tokenToSessionId(sessionToken);
+  const isResume = isSessionCreated(sessionId);
 
-  // Snapshot history length before mutation so we can rollback on error
-  const historyLenBefore = conversation.history.length;
+  const args = [
+    "claude",
+    "-p", fullMessage,
+    "--output-format", "stream-json",
+    "--verbose",
+    "--model", "sonnet",
+    // Replace CC's default system prompt (saves ~30K tokens of tool instructions)
+    "--system-prompt", core.systemPrompt,
+    "--dangerously-skip-permissions",
+    "--max-turns", "1",
+    // Performance: disable all tools (Koncierge is conversational only)
+    "--tools", "",
+    // Performance: skip user/project settings (eliminates hook overhead)
+    "--setting-sources", "",
+    // Performance: no Chrome MCP needed
+    "--no-chrome",
+  ];
 
-  // If the last message is a synthetic user message containing tool_results
-  // from the previous turn, we must merge the new text into it — the
-  // Anthropic API rejects consecutive messages with the same role.
-  // We clone the content array rather than mutating the existing message
-  // so the rollback can restore the original cleanly.
-  const lastMsg = conversation.history[conversation.history.length - 1];
-  let originalLastContent: MessageParam["content"] | undefined;
-
-  if (lastMsg?.role === "user" && Array.isArray(lastMsg.content)) {
-    // Save original content for rollback
-    originalLastContent = [...lastMsg.content] as MessageParam["content"];
-    // Append the new text block to the existing user message
-    (lastMsg.content as Array<unknown>).push({ type: "text", text: fullMessage });
+  if (isResume) {
+    args.push("--resume", sessionId);
   } else {
-    conversation.history.push({ role: "user", content: fullMessage });
+    args.push("--session-id", sessionId);
   }
 
-  const stream = core.client.messages.stream({
-    model: MODEL,
-    max_tokens: 2048,
-    system: core.systemPrompt,
-    messages: conversation.history,
-    tools: KONCIERGE_TOOLS,
+  const proc = Bun.spawn(args, {
+    env: { ...process.env },
+    stdout: "pipe",
+    stderr: "pipe",
   });
 
-  // Rollback: restore history to pre-chatStream state if the API call fails
-  const rollback = () => {
-    if (originalLastContent !== undefined) {
-      // We merged into the last message — restore its original content
-      lastMsg.content = originalLastContent;
-    } else {
-      // We pushed a new message — remove it
-      conversation.history.length = historyLenBefore;
-    }
-  };
+  // Track after spawn — marks this session as created for future --resume
+  trackSession(sessionId);
 
-  return { stream, rollback };
+  return { stdout: proc.stdout, process: proc };
+}
+
+// ─── Tool call parsing ───────────────────────────────────────────────────────
+
+let globalToolCallId = 0;
+
+/**
+ * Check if a line of text is a tool call JSON block.
+ * Tool calls look like: {"tool": "navigate", "route": "/projects"}
+ */
+function isToolCallJson(line: string): boolean {
+  const trimmed = line.trim();
+  return (trimmed.startsWith('{"tool"') || trimmed.startsWith('{ "tool"')) && trimmed.endsWith('}');
 }
 
 /**
- * After streaming completes, append the full assistant response to conversation history.
- * If the response contains tool_use blocks, also append synthetic tool_result messages
- * so the conversation remains valid for future turns.
+ * Parse a JSON tool call line into a structured tool call.
+ * Returns null if parsing fails or the line isn't a tool call.
  */
-export function appendAssistantMessage(
-  conversation: ConversationSession,
-  text: string,
-  toolUseBlocks?: ToolUseBlock[],
-): void {
-  if (!toolUseBlocks || toolUseBlocks.length === 0) {
-    // Simple text-only response
-    conversation.history.push({ role: "assistant", content: text });
-    return;
-  }
+export function parseToolCallLine(line: string): ParsedToolCall | null {
+  const trimmed = line.trim();
+  if (!isToolCallJson(trimmed)) return null;
 
-  // Build content array with text + tool_use blocks
-  const content: Array<Anthropic.Messages.TextBlockParam | ToolUseBlock> = [];
-  if (text) {
-    content.push({ type: "text", text });
-  }
-  for (const block of toolUseBlocks) {
-    content.push(block);
-  }
-  conversation.history.push({ role: "assistant", content });
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!parsed.tool || typeof parsed.tool !== "string") return null;
 
-  // Append synthetic tool_result for each tool_use so the conversation stays valid
-  const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
-  for (const block of toolUseBlocks) {
-    toolResults.push({
-      type: "tool_result",
-      tool_use_id: block.id,
-      content: "Done",
-    });
+    const name = parsed.tool;
+    const input: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (key !== "tool") {
+        input[key] = value;
+      }
+    }
+
+    return {
+      id: `toolu_cc_${globalToolCallId++}`,
+      name,
+      input,
+    };
+  } catch {
+    return null;
   }
-  conversation.history.push({ role: "user", content: toolResults });
 }
 
-export { MODEL };
+/**
+ * Process accumulated text to extract tool calls and clean text.
+ * Returns the text with tool call JSON lines removed, plus parsed tool calls.
+ */
+export function extractToolCalls(text: string): {
+  cleanText: string;
+  toolCalls: ParsedToolCall[];
+} {
+  const lines = text.split("\n");
+  const cleanLines: string[] = [];
+  const toolCalls: ParsedToolCall[] = [];
+
+  for (const line of lines) {
+    const toolCall = parseToolCallLine(line);
+    if (toolCall) {
+      toolCalls.push(toolCall);
+    } else {
+      cleanLines.push(line);
+    }
+  }
+
+  return {
+    cleanText: cleanLines.join("\n"),
+    toolCalls,
+  };
+}
